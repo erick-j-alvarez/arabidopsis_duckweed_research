@@ -24,6 +24,7 @@ The following are the necessary R-packages for running the code below:
 ```{r, results = "hide"}
 library(tidyverse)
 library(readr)
+# be sure to run install.packages("BiocManager") and use BiocManager::install("package") order to install and run the following libraries 
 library(DESeq2)
 library(apeglm)
 library(ashr)
@@ -835,3 +836,227 @@ For example, one of the csv files produced from the above analyses had the title
   - This file contains the contrast results of the knockout_line samples treated with 20 uM against the control sample with 0 uM. 
   
 Therefore, this CSV file contains the resulting contrast between the knockout_line sample treated with 20 uM and the knockout_line control sample with 0 uM. 
+
+# 8) Gene Ontology Enrichment Analysis
+**2/18/25**
+
+Be sure to install and run the following libraries for the analysis:
+```{r, results = 'hide'}
+# be sure to run install.packages("BiocManager") and use BiocManager::install("package") order to install and run the following libraries
+library(clusterProfiler)
+library(AnnotationDbi) # warning: will mask select() from dpylr 
+library(org.At.tair.db) # database used for arabidopsis
+```
+
+## Read in Individual Treatment Comparison CSV Files 
+In order to conduct GO enrichment analysis, we will need to read in our produced CSV files (from section #7) as data frames. The following chunk of code will loop through our data folder that contains the CSV files and save them as individual data frames in our global environment for further use. 
+
+The code will keep the same name for the files but change the beginning portion of "deseq2_" to "df_" and will only read in those rows with a padj < 0.05. Be sure to also replace the file path when creating the data_folder variable to wherever your CSV files were saved (will be the same path as used in the coef and ashr functions if those were utilized). 
+```{r, results = 'hide'}
+# define the data folder path
+data_folder <- "../data/arabidopsis_deseq2_results/"  # change to your actual data folder path 
+
+# list all CSV files in the folder
+csv_files <- list.files(data_folder, pattern = "\\.csv$", full.names = TRUE)
+
+# avoid scientific notation
+options(scipen = 999)
+
+# loop through each file and create a filtered data frame (padj < 0.05)
+for (file in csv_files) {
+  # extract file name without extension
+  df_name <- tools::file_path_sans_ext(basename(file))
+  
+  # replace "deseq2_" with "df_" in the variable name (should always work if using the ashr and coef functions)
+  df_name <- sub("^deseq2_", "df_", df_name)
+  
+  # read the CSV into a data frame
+  df <- read.csv(file, stringsAsFactors = FALSE)
+  
+  # filter rows where column padj < 0.05 and remove rows where padj = NA 
+  df <- df[!is.na(df$padj) & df$padj < 0.05, ]
+  
+  # save the data frames to the global environment
+  assign(df_name, df, envir = .GlobalEnv)
+}
+```
+
+## GO_results() Function 
+Function made to allow for modular Gene Ontology Enrichment analysis result output. The function's parameters are as follows:
+
+  - dataframe = dataframe of Deseq2 results of a specific comparison
+  - up_or_down = input "up" to subset up-regulated genes (+log2FoldChange) or "down" to subset down-regulated genes
+  (-log2FoldChange)
+  - database = chosen database used for the gene annotation (pulled from BiocManager; default is org.At.tair.db which a
+  database for arabidopsis)
+  - key = keyType used for the correct organism and database (default is "TAIR" which is for arabidopsis)
+  - ont_category = the major category used to dictate the gene ontology analysis
+    - BP = Biological Processes (our default for this function)
+    - MF = Molecular Function
+    - CC = Cellular Component 
+```{r, results = 'hide'}
+GO_results <- function(dataframe, up_or_down, database = "org.At.tair.db", key = "TAIR", ont_category = "BP") {
+  # remove any suffix (like ".1") from the GeneIDs (won't work otherwise)
+  dataframe$GeneID <- sub("\\..*", "", dataframe$GeneID)
+  
+  # filter up-regulation or down-regulation based on up_or_down
+  if (up_or_down == "up") {
+    genes_to_test <- dataframe$GeneID[dataframe$log2FoldChange > 0]
+  } else if (up_or_down == "down") {
+    genes_to_test <- dataframe$GeneID[dataframe$log2FoldChange < 0]
+  } else {
+    stop("Invalid value for 'up_or_down'. Use 'up' or 'down'.")
+  }
+  
+  # perform GO enrichment analysis
+  go_results <- enrichGO(gene = genes_to_test, OrgDb = database, keyType = key, ont = ont_category)
+  
+  # return the results as a data frame
+  #go_results_df <- as.data.frame(go_results)
+  
+  return(go_results)
+  
+  #return(go_results_df)
+}
+```
+
+## save_GO_results() Function 
+This function is used to convert the GO analysis results into a more reader-friendly data frame, write the contents to a CSV file, and then sort them into respective folders for either "up" or "down" regulation. 
+
+  - go_result = chosen GO results object 
+  - direction = direction of gene regulation ("up" or "down") used to determine the folder sorting location 
+  - file_path = path to parent directory of where your "up" or "down" folders are produced (default is my parent directory)
+```{r, results = 'hide'}
+save_GO_results <- function(go_result, direction, file_path = "../data/arabidopsis_GO_results/") {
+  # convert the GO results object to a data frame
+  go_result_df <- as.data.frame(go_result)
+  
+  # get the go_result variable name as a string
+  object_name <- deparse(substitute(go_result))
+  
+  # define the directory based the gene regulation direction ("up" or "down")
+  output_folder <- paste0(file_path, direction, "_results/")
+  
+  # create the folder if it doesn't exist
+  dir.create(output_folder, recursive = TRUE, showWarnings = FALSE)
+  
+  # define the output file name using the go_result variable name (so name it something useful)
+  output_file <- paste0(output_folder, object_name, ".csv")
+  
+  # write the data frame to a CSV file
+  write.csv(go_result_df, file = output_file, row.names = FALSE) 
+}
+```
+
+## Annotating Genes 
+The following code will utilize clusterProfiler, AnnotationDbi, the GO_results(), and save_GO_results() functions to annotate the genes found in each of the individual CSV files we have just read into data frames. We will select for both up-regulated (+log2FoldChange) and down-regulated (-log2FoldChange) for each CSV file. 
+
+  - We will have double the amount of CSV files split into two different folders.
+
+KO Treatment vs. WT Treatment:
+```{r}
+# WT_20 vs. KO_20 
+up_ko_20_vs_wt_20_GO <- GO_results(df_dds_treatment_ko_20_vs_wt_20, "up") # actual GO results (up-regulated)
+save_GO_results(up_ko_20_vs_wt_20_GO, "up") # GO results converted to a dataframe and saved to a CSV file 
+
+down_ko_20_vs_wt_20_GO <- GO_results(df_dds_treatment_ko_20_vs_wt_20, "down") # (down-regulated)
+save_GO_results(down_ko_20_vs_wt_20_GO, "down")
+
+# WT_40 vs. KO_40
+up_ko_40_vs_wt_40_GO <- GO_results(df_dds_treatment_ko_40_vs_wt_40, "up")
+save_GO_results(up_ko_40_vs_wt_40_GO, "up")
+
+down_ko_40_vs_wt_40_GO <- GO_results(df_dds_treatment_ko_40_vs_wt_40, "down")
+save_GO_results(down_ko_40_vs_wt_40_GO, "down")
+
+# WT_60 vs. KO_60 
+up_ko_60_vs_wt_60_GO <- GO_results(df_dds_treatment_ko_60_vs_wt_60, "up")
+save_GO_results(up_ko_60_vs_wt_60_GO, "up")
+
+down_ko_60_vs_wt_60_GO <- GO_results(df_dds_treatment_ko_60_vs_wt_60, "down")
+save_GO_results(down_ko_60_vs_wt_60_GO, "down")
+
+# WT_80 vs. KO_80 
+up_ko_80_vs_wt_80_GO <- GO_results(df_dds_treatment_ko_80_vs_wt_80, "up")
+save_GO_results(up_ko_80_vs_wt_80_GO, "up")
+
+down_ko_80_vs_wt_80_GO <- GO_results(df_dds_treatment_ko_80_vs_wt_80, "down")
+save_GO_results(down_ko_80_vs_wt_80_GO, "down")
+```
+
+Only Controls:
+```{r}
+# WT_0 vs. KO_0
+up_control_ko_0_vs_wt_0_GO <- GO_results(df_dds_controls_knockout_line_vs_wild_type, "up")
+save_GO_results(up_control_ko_0_vs_wt_0_GO, "up")
+
+down_control_ko_0_vs_wt_0_GO <- GO_results(df_dds_controls_knockout_line_vs_wild_type, "down")
+save_GO_results(down_control_ko_0_vs_wt_0_GO, "down")
+
+# show Dr. Liang the huge differences in padj 
+barplot(up_control_ko_0_vs_wt_0_GO, showCategory = 20)
+
+barplot(down_control_ko_0_vs_wt_0_GO, showCategory = 20)
+```
+
+Only Wild-Type Samples:
+```{r}
+# WT_0 vs. WT_20 
+up_wt_20_vs_0_GO <- GO_results(df_dds_wt_20_vs_0, "up")
+save_GO_results(up_wt_20_vs_0_GO, "up")
+
+down_wt_20_vs_0_GO <- GO_results(df_dds_wt_20_vs_0, "down")
+save_GO_results(down_wt_20_vs_0_GO, "down")
+
+# WT_0 vs. WT_40 
+up_wt_40_vs_0_GO <- GO_results(df_dds_wt_40_vs_0, "up")
+save_GO_results(up_wt_40_vs_0_GO, "up")
+
+down_wt_40_vs_0_GO <- GO_results(df_dds_wt_40_vs_0, "down")
+save_GO_results(down_wt_40_vs_0_GO, "down")
+
+# WT_0 vs. WT_60 
+up_wt_60_vs_0_GO <- GO_results(df_dds_wt_60_vs_0, "up")
+save_GO_results(up_wt_60_vs_0_GO, "up")
+
+down_wt_60_vs_0_GO <- GO_results(df_dds_wt_60_vs_0, "down")
+save_GO_results(down_wt_60_vs_0_GO, "down")
+
+# WT_0 vs. WT_80 
+up_wt_80_vs_0_GO <- GO_results(df_dds_wt_80_vs_0, "up")
+save_GO_results(up_wt_80_vs_0_GO, "up")
+
+down_wt_80_vs_0_GO <- GO_results(df_dds_wt_80_vs_0, "down")
+save_GO_results(down_wt_80_vs_0_GO, "down")
+```
+
+Only Knockout-Line Samples:
+```{r}
+# KO_0 vs. KO_20 
+up_ko_20_vs_0_GO <- GO_results(df_dds_ko_20_vs_0, "up")
+save_GO_results(up_ko_20_vs_0_GO, "up")
+
+down_ko_20_vs_0_GO <- GO_results(df_dds_ko_20_vs_0, "down")
+save_GO_results(down_ko_20_vs_0_GO, "down")
+
+# KO_0 vs. KO_40 
+up_ko_40_vs_0_GO <- GO_results(df_dds_ko_40_vs_0, "up")
+save_GO_results(up_ko_40_vs_0_GO, "up")
+
+down_ko_40_vs_0_GO <- GO_results(df_dds_ko_40_vs_0, "down")
+save_GO_results(down_ko_40_vs_0_GO, "down")
+
+# KO_0 vs. KO_60 
+up_ko_60_vs_0_GO <- GO_results(df_dds_ko_60_vs_0, "up")
+save_GO_results(up_ko_60_vs_0_GO, "up")
+
+down_ko_60_vs_0_GO <- GO_results(df_dds_ko_60_vs_0, "down")
+save_GO_results(down_ko_60_vs_0_GO, "down")
+
+# KO_0 vs. KO_80 
+up_ko_80_vs_0_GO <- GO_results(df_dds_ko_80_vs_0, "up")
+save_GO_results(up_ko_80_vs_0_GO, "up")
+
+down_ko_80_vs_0_GO <- GO_results(df_dds_ko_80_vs_0, "down")
+save_GO_results(down_ko_80_vs_0_GO, "down")
+```
