@@ -662,7 +662,7 @@ res_dds_treatment <- results(dds_treatment)
 res_dds_treatment
 
 # summary results of res_dds_treatment (with re-level of group = wt_0)
-summary(res_dds_treatment)
+summary(res_dds_treatment, 0.05)
 ```
 
 We will be using the ashr_shrinkage_contrast() function for the comparisons regarding dds_treatment as they have a reference level of wt_0 but require contrasts between treatments of both genotypes to each other, not to the controls. In other words, we will be comparing wt_20 vs. ko_20, wt_40 vs. ko_40, etc., in these 'dds' results. Therefore, we need the ability to be specific about our contrasts (using the contrast() function) and still be able to shrink the data which is not functional with apeglm, but is functional with ashr.
@@ -702,7 +702,7 @@ res_dds_controls <- results(dds_controls)
 res_dds_controls
 
 # summary results of res_dds_controls (with re-level of genotype = wild_type)
-summary(res_dds_controls)
+summary(res_dds_controls, 0.05)
 ```
 
 For the all of the remaining comparisons, we will be using the coef_shrinkage_contrast() function as the data for the dds_controls, dds_wt, and dds_ko objects have all been subset and re-leveled to reference the wild_type control variant where possible (dds_controls and dds_wt) or the knockout_line control variant in dds_ko. In these cases, we are comparing all instances specifically to the reference level, therefore, the intercepts are viable coefficients to use with the apeglm shrinkage estimator. Although we cannot use the contrast() function with apeglm. 
@@ -732,7 +732,7 @@ res_dds_wt <- results(dds_wt)
 res_dds_wt
 
 # summary results of res_dds_wt (with re-level of treatment = 0 for wild_type)
-summary(res_dds_wt)
+summary(res_dds_wt, 0.05)
 ```
 
 #### WT_0 vs. WT_20
@@ -770,7 +770,7 @@ res_dds_ko <- results(dds_ko)
 res_dds_ko
 
 # summary results of res_dds_ko (with re-level of treatment = 0 for knockout_line)
-summary(res_dds_ko)
+summary(res_dds_ko, 0.05)
 
 ```
 
@@ -911,12 +911,8 @@ GO_results <- function(dataframe, up_or_down, database = "org.At.tair.db", key =
   # perform GO enrichment analysis
   go_results <- enrichGO(gene = genes_to_test, OrgDb = database, keyType = key, ont = ont_category)
   
-  # return the results as a data frame
-  #go_results_df <- as.data.frame(go_results)
-  
   return(go_results)
   
-  #return(go_results_df)
 }
 ```
 
@@ -949,114 +945,483 @@ save_GO_results <- function(go_result, direction, file_path = "../data/arabidops
 ```
 
 ## Annotating Genes 
-The following code will utilize clusterProfiler, AnnotationDbi, the GO_results(), and save_GO_results() functions to annotate the genes found in each of the individual CSV files we have just read into data frames. We will select for both up-regulated (+log2FoldChange) and down-regulated (-log2FoldChange) for each CSV file. 
+The following code will utilize clusterProfiler, AnnotationDbi, the GO_results(), and save_GO_results() functions to annotate the genes found in each of the individual CSV files we have just read into data frames. We will select for both up-regulated (+log2FoldChange) and down-regulated (-log2FoldChange) for each CSV file. We will also be conducting this on each of the three gene ontology categories (biological processes, molecular functions, cellular components).
 
   - We will have double the amount of CSV files split into two different folders.
 
 KO Treatment vs. WT Treatment:
 ```{r}
 # WT_20 vs. KO_20 
-up_ko_20_vs_wt_20_GO <- GO_results(df_dds_treatment_ko_20_vs_wt_20, "up") # actual GO results (up-regulated)
-save_GO_results(up_ko_20_vs_wt_20_GO, "up") # GO results converted to a dataframe and saved to a CSV file 
+up_BP_ko_20_vs_wt_20_GO <- GO_results(df_dds_treatment_ko_20_vs_wt_20, "up") # actual GO results (up-regulated)/default ont_category = "BP"
+save_GO_results(up_BP_ko_20_vs_wt_20_GO, "up") # GO results converted to a dataframe and saved to a CSV file 
+down_BP_ko_20_vs_wt_20_GO <- GO_results(df_dds_treatment_ko_20_vs_wt_20, "down") # (down-regulated)
+save_GO_results(down_BP_ko_20_vs_wt_20_GO, "down")
 
-down_ko_20_vs_wt_20_GO <- GO_results(df_dds_treatment_ko_20_vs_wt_20, "down") # (down-regulated)
-save_GO_results(down_ko_20_vs_wt_20_GO, "down")
+up_MF_ko_20_vs_wt_20_GO <- GO_results(df_dds_treatment_ko_20_vs_wt_20, "up", ont_category = "MF")
+save_GO_results(up_MF_ko_20_vs_wt_20_GO, "up")
+down_MF_ko_20_vs_wt_20_GO <- GO_results(df_dds_treatment_ko_20_vs_wt_20, "down", ont_category = "MF")
+save_GO_results(down_MF_ko_20_vs_wt_20_GO, "down")
+
+up_CC_ko_20_vs_wt_20_GO <- GO_results(df_dds_treatment_ko_20_vs_wt_20, "up", ont_category = "CC")
+save_GO_results(up_CC_ko_20_vs_wt_20_GO, "up")
+down_CC_ko_20_vs_wt_20_GO <- GO_results(df_dds_treatment_ko_20_vs_wt_20, "down", ont_category = "CC")
+save_GO_results(down_CC_ko_20_vs_wt_20_GO, "down")
+
+
 
 # WT_40 vs. KO_40
-up_ko_40_vs_wt_40_GO <- GO_results(df_dds_treatment_ko_40_vs_wt_40, "up")
-save_GO_results(up_ko_40_vs_wt_40_GO, "up")
+up_BP_ko_40_vs_wt_40_GO <- GO_results(df_dds_treatment_ko_40_vs_wt_40, "up")
+save_GO_results(up_BP_ko_40_vs_wt_40_GO, "up")
+down_BP_ko_40_vs_wt_40_GO <- GO_results(df_dds_treatment_ko_40_vs_wt_40, "down")
+save_GO_results(down_BP_ko_40_vs_wt_40_GO, "down")
 
-down_ko_40_vs_wt_40_GO <- GO_results(df_dds_treatment_ko_40_vs_wt_40, "down")
-save_GO_results(down_ko_40_vs_wt_40_GO, "down")
+up_MF_ko_40_vs_wt_40_GO <- GO_results(df_dds_treatment_ko_40_vs_wt_40, "up", ont_category = "MF")
+save_GO_results(up_MF_ko_40_vs_wt_40_GO, "up")
+down_MF_ko_40_vs_wt_40_GO <- GO_results(df_dds_treatment_ko_40_vs_wt_40, "down", ont_category = "MF")
+save_GO_results(down_MF_ko_40_vs_wt_40_GO, "down")
+
+up_CC_ko_40_vs_wt_40_GO <- GO_results(df_dds_treatment_ko_40_vs_wt_40, "up", ont_category = "CC")
+save_GO_results(up_CC_ko_40_vs_wt_40_GO, "up")
+down_CC_ko_40_vs_wt_40_GO <- GO_results(df_dds_treatment_ko_40_vs_wt_40, "down", ont_category = "CC")
+save_GO_results(down_CC_ko_40_vs_wt_40_GO, "down")
+
+
 
 # WT_60 vs. KO_60 
-up_ko_60_vs_wt_60_GO <- GO_results(df_dds_treatment_ko_60_vs_wt_60, "up")
-save_GO_results(up_ko_60_vs_wt_60_GO, "up")
+up_BP_ko_60_vs_wt_60_GO <- GO_results(df_dds_treatment_ko_60_vs_wt_60, "up")
+save_GO_results(up_BP_ko_60_vs_wt_60_GO, "up")
+down_BP_ko_60_vs_wt_60_GO <- GO_results(df_dds_treatment_ko_60_vs_wt_60, "down")
+save_GO_results(down_BP_ko_60_vs_wt_60_GO, "down")
 
-down_ko_60_vs_wt_60_GO <- GO_results(df_dds_treatment_ko_60_vs_wt_60, "down")
-save_GO_results(down_ko_60_vs_wt_60_GO, "down")
+up_MF_ko_60_vs_wt_60_GO <- GO_results(df_dds_treatment_ko_60_vs_wt_60, "up", ont_category = "MF")
+save_GO_results(up_MF_ko_60_vs_wt_60_GO, "up")
+down_MF_ko_60_vs_wt_60_GO <- GO_results(df_dds_treatment_ko_60_vs_wt_60, "down", ont_category = "MF")
+save_GO_results(down_MF_ko_60_vs_wt_60_GO, "down")
+
+up_CC_ko_60_vs_wt_60_GO <- GO_results(df_dds_treatment_ko_60_vs_wt_60, "up", ont_category = "CC")
+save_GO_results(up_CC_ko_60_vs_wt_60_GO, "up")
+down_CC_ko_60_vs_wt_60_GO <- GO_results(df_dds_treatment_ko_60_vs_wt_60, "down", ont_category = "CC")
+save_GO_results(down_CC_ko_60_vs_wt_60_GO, "down")
+
+
 
 # WT_80 vs. KO_80 
-up_ko_80_vs_wt_80_GO <- GO_results(df_dds_treatment_ko_80_vs_wt_80, "up")
-save_GO_results(up_ko_80_vs_wt_80_GO, "up")
+up_BP_ko_80_vs_wt_80_GO <- GO_results(df_dds_treatment_ko_80_vs_wt_80, "up")
+save_GO_results(up_BP_ko_80_vs_wt_80_GO, "up")
+down_BP_ko_80_vs_wt_80_GO <- GO_results(df_dds_treatment_ko_80_vs_wt_80, "down")
+save_GO_results(down_BP_ko_80_vs_wt_80_GO, "down")
 
-down_ko_80_vs_wt_80_GO <- GO_results(df_dds_treatment_ko_80_vs_wt_80, "down")
-save_GO_results(down_ko_80_vs_wt_80_GO, "down")
+up_MF_ko_80_vs_wt_80_GO <- GO_results(df_dds_treatment_ko_80_vs_wt_80, "up", ont_category = "MF")
+save_GO_results(up_MF_ko_80_vs_wt_80_GO, "up")
+down_MF_ko_80_vs_wt_80_GO <- GO_results(df_dds_treatment_ko_80_vs_wt_80, "down", ont_category = "MF")
+save_GO_results(down_MF_ko_80_vs_wt_80_GO, "down")
+
+up_CC_ko_80_vs_wt_80_GO <- GO_results(df_dds_treatment_ko_80_vs_wt_80, "up", ont_category = "CC")
+save_GO_results(up_CC_ko_80_vs_wt_80_GO, "up")
+down_CC_ko_80_vs_wt_80_GO <- GO_results(df_dds_treatment_ko_80_vs_wt_80, "down", ont_category = "CC")
+save_GO_results(down_CC_ko_80_vs_wt_80_GO, "down")
 ```
 
 Only Controls:
 ```{r}
 # WT_0 vs. KO_0
-up_control_ko_0_vs_wt_0_GO <- GO_results(df_dds_controls_knockout_line_vs_wild_type, "up")
-save_GO_results(up_control_ko_0_vs_wt_0_GO, "up")
+up_BP_control_ko_0_vs_wt_0_GO <- GO_results(df_dds_controls_knockout_line_vs_wild_type, "up")
+save_GO_results(up_BP_control_ko_0_vs_wt_0_GO, "up")
+down_BP_control_ko_0_vs_wt_0_GO <- GO_results(df_dds_controls_knockout_line_vs_wild_type, "down")
+save_GO_results(down_BP_control_ko_0_vs_wt_0_GO, "down")
 
-down_control_ko_0_vs_wt_0_GO <- GO_results(df_dds_controls_knockout_line_vs_wild_type, "down")
-save_GO_results(down_control_ko_0_vs_wt_0_GO, "down")
+up_MF_control_ko_0_vs_wt_0_GO <- GO_results(df_dds_controls_knockout_line_vs_wild_type, "up", ont_category = "MF")
+save_GO_results(up_MF_control_ko_0_vs_wt_0_GO, "up")
+down_MF_control_ko_0_vs_wt_0_GO <- GO_results(df_dds_controls_knockout_line_vs_wild_type, "down", ont_category = "MF")
+save_GO_results(down_MF_control_ko_0_vs_wt_0_GO, "down")
 
-# show Dr. Liang the huge differences in padj 
-barplot(up_control_ko_0_vs_wt_0_GO, showCategory = 20)
-
-barplot(down_control_ko_0_vs_wt_0_GO, showCategory = 20)
+up_CC_control_ko_0_vs_wt_0_GO <- GO_results(df_dds_controls_knockout_line_vs_wild_type, "up", ont_category = "CC")
+save_GO_results(up_CC_control_ko_0_vs_wt_0_GO, "up")
+down_CC_control_ko_0_vs_wt_0_GO <- GO_results(df_dds_controls_knockout_line_vs_wild_type, "down", ont_category = "CC")
+save_GO_results(down_CC_control_ko_0_vs_wt_0_GO, "down")
 ```
 
 Only Wild-Type Samples:
 ```{r}
 # WT_0 vs. WT_20 
-up_wt_20_vs_0_GO <- GO_results(df_dds_wt_20_vs_0, "up")
-save_GO_results(up_wt_20_vs_0_GO, "up")
+up_BP_wt_20_vs_0_GO <- GO_results(df_dds_wt_20_vs_0, "up")
+save_GO_results(up_BP_wt_20_vs_0_GO, "up")
+down_BP_wt_20_vs_0_GO <- GO_results(df_dds_wt_20_vs_0, "down")
+save_GO_results(down_BP_wt_20_vs_0_GO, "down")
 
-down_wt_20_vs_0_GO <- GO_results(df_dds_wt_20_vs_0, "down")
-save_GO_results(down_wt_20_vs_0_GO, "down")
+up_MF_wt_20_vs_0_GO <- GO_results(df_dds_wt_20_vs_0, "up", ont_category = "MF")
+save_GO_results(up_MF_wt_20_vs_0_GO, "up")
+down_MF_wt_20_vs_0_GO <- GO_results(df_dds_wt_20_vs_0, "down", ont_category = "MF")
+save_GO_results(down_MF_wt_20_vs_0_GO, "down")
+
+up_CC_wt_20_vs_0_GO <- GO_results(df_dds_wt_20_vs_0, "up", ont_category = "CC")
+save_GO_results(up_CC_wt_20_vs_0_GO, "up")
+down_CC_wt_20_vs_0_GO <- GO_results(df_dds_wt_20_vs_0, "down", ont_category = "CC")
+save_GO_results(down_CC_wt_20_vs_0_GO, "down")
+
+
 
 # WT_0 vs. WT_40 
-up_wt_40_vs_0_GO <- GO_results(df_dds_wt_40_vs_0, "up")
-save_GO_results(up_wt_40_vs_0_GO, "up")
+up_BP_wt_40_vs_0_GO <- GO_results(df_dds_wt_40_vs_0, "up")
+save_GO_results(up_BP_wt_40_vs_0_GO, "up")
+down_BP_wt_40_vs_0_GO <- GO_results(df_dds_wt_40_vs_0, "down")
+save_GO_results(down_BP_wt_40_vs_0_GO, "down")
 
-down_wt_40_vs_0_GO <- GO_results(df_dds_wt_40_vs_0, "down")
-save_GO_results(down_wt_40_vs_0_GO, "down")
+up_MF_wt_40_vs_0_GO <- GO_results(df_dds_wt_40_vs_0, "up", ont_category = "MF")
+save_GO_results(up_MF_wt_40_vs_0_GO, "up")
+down_MF_wt_40_vs_0_GO <- GO_results(df_dds_wt_40_vs_0, "down", ont_category = "MF")
+save_GO_results(down_MF_wt_40_vs_0_GO, "down")
+
+up_CC_wt_40_vs_0_GO <- GO_results(df_dds_wt_40_vs_0, "up", ont_category = "CC")
+save_GO_results(up_CC_wt_40_vs_0_GO, "up")
+down_CC_wt_40_vs_0_GO <- GO_results(df_dds_wt_40_vs_0, "down", ont_category = "CC")
+save_GO_results(down_CC_wt_40_vs_0_GO, "down")
+
+
 
 # WT_0 vs. WT_60 
-up_wt_60_vs_0_GO <- GO_results(df_dds_wt_60_vs_0, "up")
-save_GO_results(up_wt_60_vs_0_GO, "up")
+up_BP_wt_60_vs_0_GO <- GO_results(df_dds_wt_60_vs_0, "up")
+save_GO_results(up_BP_wt_60_vs_0_GO, "up")
+down_BP_wt_60_vs_0_GO <- GO_results(df_dds_wt_60_vs_0, "down")
+save_GO_results(down_BP_wt_60_vs_0_GO, "down")
 
-down_wt_60_vs_0_GO <- GO_results(df_dds_wt_60_vs_0, "down")
-save_GO_results(down_wt_60_vs_0_GO, "down")
+up_MF_wt_60_vs_0_GO <- GO_results(df_dds_wt_60_vs_0, "up", ont_category = "MF")
+save_GO_results(up_MF_wt_60_vs_0_GO, "up")
+down_MF_wt_60_vs_0_GO <- GO_results(df_dds_wt_60_vs_0, "down", ont_category = "MF")
+save_GO_results(down_MF_wt_60_vs_0_GO, "down")
+
+up_CC_wt_60_vs_0_GO <- GO_results(df_dds_wt_60_vs_0, "up", ont_category = "CC")
+save_GO_results(up_CC_wt_60_vs_0_GO, "up")
+down_CC_wt_60_vs_0_GO <- GO_results(df_dds_wt_60_vs_0, "down", ont_category = "CC")
+save_GO_results(down_CC_wt_60_vs_0_GO, "down")
+
+
 
 # WT_0 vs. WT_80 
-up_wt_80_vs_0_GO <- GO_results(df_dds_wt_80_vs_0, "up")
-save_GO_results(up_wt_80_vs_0_GO, "up")
+up_BP_wt_80_vs_0_GO <- GO_results(df_dds_wt_80_vs_0, "up")
+save_GO_results(up_BP_wt_80_vs_0_GO, "up")
+down_BP_wt_80_vs_0_GO <- GO_results(df_dds_wt_80_vs_0, "down")
+save_GO_results(down_BP_wt_80_vs_0_GO, "down")
 
-down_wt_80_vs_0_GO <- GO_results(df_dds_wt_80_vs_0, "down")
-save_GO_results(down_wt_80_vs_0_GO, "down")
+up_MF_wt_80_vs_0_GO <- GO_results(df_dds_wt_80_vs_0, "up", ont_category = "MF")
+save_GO_results(up_MF_wt_80_vs_0_GO, "up")
+down_MF_wt_80_vs_0_GO <- GO_results(df_dds_wt_80_vs_0, "down", ont_category = "MF")
+save_GO_results(down_MF_wt_80_vs_0_GO, "down")
+
+up_CC_wt_80_vs_0_GO <- GO_results(df_dds_wt_80_vs_0, "up", ont_category = "CC")
+save_GO_results(up_CC_wt_80_vs_0_GO, "up")
+down_CC_wt_80_vs_0_GO <- GO_results(df_dds_wt_80_vs_0, "down", ont_category = "CC")
+save_GO_results(down_CC_wt_80_vs_0_GO, "down")
 ```
 
 Only Knockout-Line Samples:
 ```{r}
 # KO_0 vs. KO_20 
-up_ko_20_vs_0_GO <- GO_results(df_dds_ko_20_vs_0, "up")
-save_GO_results(up_ko_20_vs_0_GO, "up")
+up_BP_ko_20_vs_0_GO <- GO_results(df_dds_ko_20_vs_0, "up")
+save_GO_results(up_BP_ko_20_vs_0_GO, "up")
+down_BP_ko_20_vs_0_GO <- GO_results(df_dds_ko_20_vs_0, "down")
+save_GO_results(down_BP_ko_20_vs_0_GO, "down")
 
-down_ko_20_vs_0_GO <- GO_results(df_dds_ko_20_vs_0, "down")
-save_GO_results(down_ko_20_vs_0_GO, "down")
+up_MF_ko_20_vs_0_GO <- GO_results(df_dds_ko_20_vs_0, "up", ont_category = "MF")
+save_GO_results(up_MF_ko_20_vs_0_GO, "up")
+down_MF_ko_20_vs_0_GO <- GO_results(df_dds_ko_20_vs_0, "down", ont_category = "MF")
+save_GO_results(down_MF_ko_20_vs_0_GO, "down")
+
+up_CC_ko_20_vs_0_GO <- GO_results(df_dds_ko_20_vs_0, "up", ont_category = "CC")
+save_GO_results(up_CC_ko_20_vs_0_GO, "up")
+down_CC_ko_20_vs_0_GO <- GO_results(df_dds_ko_20_vs_0, "down", ont_category = "CC")
+save_GO_results(down_CC_ko_20_vs_0_GO, "down")
+
+
 
 # KO_0 vs. KO_40 
-up_ko_40_vs_0_GO <- GO_results(df_dds_ko_40_vs_0, "up")
-save_GO_results(up_ko_40_vs_0_GO, "up")
+up_BP_ko_40_vs_0_GO <- GO_results(df_dds_ko_40_vs_0, "up")
+save_GO_results(up_BP_ko_40_vs_0_GO, "up")
+down_BP_ko_40_vs_0_GO <- GO_results(df_dds_ko_40_vs_0, "down")
+save_GO_results(down_BP_ko_40_vs_0_GO, "down")
 
-down_ko_40_vs_0_GO <- GO_results(df_dds_ko_40_vs_0, "down")
-save_GO_results(down_ko_40_vs_0_GO, "down")
+up_MF_ko_40_vs_0_GO <- GO_results(df_dds_ko_40_vs_0, "up", ont_category = "MF")
+save_GO_results(up_MF_ko_40_vs_0_GO, "up")
+down_MF_ko_40_vs_0_GO <- GO_results(df_dds_ko_40_vs_0, "down", ont_category = "MF")
+save_GO_results(down_MF_ko_40_vs_0_GO, "down")
+
+up_CC_ko_40_vs_0_GO <- GO_results(df_dds_ko_40_vs_0, "up", ont_category = "CC")
+save_GO_results(up_CC_ko_40_vs_0_GO, "up")
+down_CC_ko_40_vs_0_GO <- GO_results(df_dds_ko_40_vs_0, "down", ont_category = "CC")
+save_GO_results(down_CC_ko_40_vs_0_GO, "down")
+
+
 
 # KO_0 vs. KO_60 
-up_ko_60_vs_0_GO <- GO_results(df_dds_ko_60_vs_0, "up")
-save_GO_results(up_ko_60_vs_0_GO, "up")
+up_BP_ko_60_vs_0_GO <- GO_results(df_dds_ko_60_vs_0, "up")
+save_GO_results(up_BP_ko_60_vs_0_GO, "up")
+down_BP_ko_60_vs_0_GO <- GO_results(df_dds_ko_60_vs_0, "down")
+save_GO_results(down_BP_ko_60_vs_0_GO, "down")
 
-down_ko_60_vs_0_GO <- GO_results(df_dds_ko_60_vs_0, "down")
-save_GO_results(down_ko_60_vs_0_GO, "down")
+up_MF_ko_60_vs_0_GO <- GO_results(df_dds_ko_60_vs_0, "up", ont_category = "MF")
+save_GO_results(up_MF_ko_60_vs_0_GO, "up")
+down_MF_ko_60_vs_0_GO <- GO_results(df_dds_ko_60_vs_0, "down", ont_category = "MF")
+save_GO_results(down_MF_ko_60_vs_0_GO, "down")
+
+up_CC_ko_60_vs_0_GO <- GO_results(df_dds_ko_60_vs_0, "up", ont_category = "CC")
+save_GO_results(up_CC_ko_60_vs_0_GO, "up")
+down_CC_ko_60_vs_0_GO <- GO_results(df_dds_ko_60_vs_0, "down", ont_category = "CC")
+save_GO_results(down_CC_ko_60_vs_0_GO, "down")
+
+
 
 # KO_0 vs. KO_80 
-up_ko_80_vs_0_GO <- GO_results(df_dds_ko_80_vs_0, "up")
-save_GO_results(up_ko_80_vs_0_GO, "up")
+up_BP_ko_80_vs_0_GO <- GO_results(df_dds_ko_80_vs_0, "up")
+save_GO_results(up_BP_ko_80_vs_0_GO, "up")
+down_BP_ko_80_vs_0_GO <- GO_results(df_dds_ko_80_vs_0, "down")
+save_GO_results(down_BP_ko_80_vs_0_GO, "down")
 
-down_ko_80_vs_0_GO <- GO_results(df_dds_ko_80_vs_0, "down")
-save_GO_results(down_ko_80_vs_0_GO, "down")
+up_MF_ko_80_vs_0_GO <- GO_results(df_dds_ko_80_vs_0, "up", ont_category = "MF")
+save_GO_results(up_MF_ko_80_vs_0_GO, "up")
+down_MF_ko_80_vs_0_GO <- GO_results(df_dds_ko_80_vs_0, "down", ont_category = "MF")
+save_GO_results(down_MF_ko_80_vs_0_GO, "down")
+
+up_CC_ko_80_vs_0_GO <- GO_results(df_dds_ko_80_vs_0, "up", ont_category = "CC")
+save_GO_results(up_CC_ko_80_vs_0_GO, "up")
+down_CC_ko_80_vs_0_GO <- GO_results(df_dds_ko_80_vs_0, "down", ont_category = "CC")
+save_GO_results(down_CC_ko_80_vs_0_GO, "down")
+```
+
+## count_GO_terms() Function 
+**2/25/25**
+
+The following function produces a CSV file/table that contains the count of gene ontology description terms from the BP, MF, and CC annotations. It does so by parsing through the associated "up" and "down" regulated gene annotation files and inserts the values into their appropriate rows/columns. It looks for patterns denoted by the title of the CSV files saved in the previous step of annotating genes. It searches a specific directory (my personal one is the default) and searches for more specific directories that separated the "up" and "down" results (the default are set to my naming convention). The tables will be saved to their own new folder (named GO_term_counts) within your chosen data_file_path directory. 
+
+  - Regardless if you have this entire repository, and don't need to specify any different file paths, you must include the
+  CSV title pattern unique to each file produced during the annotating genes step. Those names are not dynamic, therefore,
+  it will depend completely on how you named them yourself (assuming you changed them from what I originally had them as);
+  BE CAREFUL! I suggest you just use the code as is as things are getting complicated to a point I'm struggling to make
+  everything dynamic. 
+  
+The function's arguments are:
+
+  - data_file_path = the path to the parent directory that contains your up-regulated and down-regulated gene annotation
+  results (for BP, MF, and CC).
+  - comparison_pattern = the particular pattern (i.e. part of the CSV file name) of the gene annotation results
+    - Be sure to not include a beginning or ending underscore (the function accounts for that already).
+  - up_regulated_data = the name of the child directory that contains your up-regulated data files 
+  - down_regulated_data = the name of the child directory that contains your down-regulated data files 
+  
+Note: there is a lot of debugging code in this function to see how it works as I struggled writing it for quite some time.
+```{r}
+count_GO_terms <- function(data_file_path = "../data/arabidopsis_GO_results", 
+                           comparison_pattern, 
+                           up_regulated_data = "up_results", 
+                           down_regulated_data = "down_results") {
+  # define the GO categories
+  go_categories <- c("BP", "MF", "CC")
+  
+  # initialize the results matrix 
+  results_matrix <- matrix(0, nrow = length(go_categories), ncol = 2, 
+                           dimnames = list(go_categories, c("up", "down")))
+  
+  # helper function used to process files in a given folder and direction ("up" or "down")
+  process_files <- function(folder, direction, results_matrix) {
+    for (category in go_categories) {
+      # build the exact file name pattern
+      file_pattern <- paste0(direction, "_", category, "_", comparison_pattern, "_GO.csv") # very exact to the naming convention used for the annotating genes step 
+      
+      # list out files matching the name pattern (should be only one per category (BP, MF, CC))
+      files <- list.files(folder, pattern = file_pattern, full.names = TRUE)
+      
+      if (length(files) > 0) {
+        file <- files[1]  # take the initial match (should only be one anyways)
+        
+        # read the matching CSV file
+        data <- read.csv(file, stringsAsFactors = FALSE)
+        
+        # count rows where p.adjust < 0.05 (will match the number of significant GO Description terms); ignores NA values 
+        count <- sum(data$p.adjust < 0.05, na.rm = TRUE)
+        
+        # DEBUG: check the count and where it is being assigned
+        print(paste("Updating matrix for category:", category, "and direction:", direction))
+        print(paste("Count to assign:", count))
+        
+        # store result in matrix
+        if (direction == "up") {
+          results_matrix[category, "up"] <- count
+        } else if (direction == "down") {
+          results_matrix[category, "down"] <- count
+        }
+        
+        # DEBUG: display the matrix after each count assignment
+        print(results_matrix)  
+      } else {
+        # if no files are found (i.e. incorrect pattern input), print a warning error 
+        warning(paste("No matching file found for", direction, category, "in", folder))
+      }
+    }
+    return(results_matrix)  # return updated matrix
+  }
+  
+  # define the output path
+  output_dir <- file.path(data_file_path, "GO_term_counts")
+  
+  # create the directory (if it doesn't already exist)
+  dir.create(output_dir, showWarnings = FALSE)
+  
+  # process both the "up" and "down" CSV file results 
+  results_matrix <- process_files(file.path(data_file_path, up_regulated_data), "up", results_matrix)
+  results_matrix <- process_files(file.path(data_file_path, down_regulated_data), "down", results_matrix)
+  
+  # DEBUG: display the final results matrix
+  print("Final results_matrix:")
+  print(results_matrix)
+  
+  # define the output path and save the results once the entire matrix is complete 
+  output_file <- file.path(output_dir, paste0(comparison_pattern, "_GO_counts.csv"))
+  write.csv(as.data.frame(results_matrix), output_file, row.names = TRUE)
+}
+```
+
+The following code chunks are the running of the count_GO_terms() function to produce a table for each comparison.
+
+ - The initial code chunk will display what the assignment to the matrix looks like in the terminal. The rest of the
+ instances will hide the output. 
+
+KO Treatment vs. WT Treatment:
+```{r}
+# WT_20 vs. KO_20 
+count_GO_terms(comparison_pattern = "ko_20_vs_wt_20")
+```
+
+```{r, results = 'hide'}
+# WT_40 vs. KO_40 
+count_GO_terms(comparison_pattern = "ko_40_vs_wt_40")
+
+# WT_60 vs. KO_60
+count_GO_terms(comparison_pattern = "ko_60_vs_wt_60")
+
+# WT_80 vs. KO_80
+count_GO_terms(comparison_pattern = "ko_80_vs_wt_80")
+```
+
+Only Controls:
+```{r, results = 'hide'}
+# WT_0 vs. KO_0
+count_GO_terms(comparison_pattern = "control_ko_0_vs_wt_0")
+```
+
+Only Wild-Type Samples:
+```{r, results = 'hide'}
+# WT_0 vs. WT_20 
+count_GO_terms(comparison_pattern = "wt_20_vs_0")
+
+# WT_0 vs. WT_40 
+count_GO_terms(comparison_pattern = "wt_40_vs_0")
+
+# WT_0 vs. WT_60 
+count_GO_terms(comparison_pattern = "wt_60_vs_0")
+
+# WT_0 vs. WT_80 
+count_GO_terms(comparison_pattern = "wt_80_vs_0")
+```
+
+Only Knockout-Line Samples:
+```{r, results = 'hide'}
+# KO_0 vs. KO_20 
+count_GO_terms(comparison_pattern = "ko_20_vs_0")
+
+# KO_0 vs. KO_40 
+count_GO_terms(comparison_pattern = "ko_40_vs_0")
+
+# KO_0 vs. KO_60 
+count_GO_terms(comparison_pattern = "ko_60_vs_0")
+
+# KO_0 vs. KO_80 
+count_GO_terms(comparison_pattern = "ko_80_vs_0")
+```
+
+## plot_top_GO_terms() Function 
+**Double check that this works correctly by looking at the values directly; I think it struggles when there are matching values**
+
+The following function uses a similar logic as the count_GO_terms() function. The difference is that instead of making a table with significant GO term counts, it makes a horizontal bar plot that displays the most significant GO terms for each category (BP, MF, CC) across both the up and down regulated gene annotations for a particular comparison. In other words, it parses through all associated data sets for the chosen comparison_pattern and finds the smallest p.adjust values across the up and down regulated genes combined. It then separates them by category. 
+
+The function's arguments are the same as the count_GO_terms() function, however, there is now an option to select how many significant terms we want in the plot. 
+
+  - top_n = how many significant terms we want to include in the plot (top 3, top 5, top 7, top 10, etc.)
+    - Default is 5 
+```{r}
+plot_top_GO_terms <- function(data_file_path = "../data/arabidopsis_GO_results", 
+                              comparison_pattern, 
+                              top_n = 5,
+                              up_regulated_data = "up_results", 
+                              down_regulated_data = "down_results") {
+  
+  # define the GO categories 
+  go_categories <- c("BP", "MF", "CC")
+  all_data <- data.frame()  # initialize a data frame to store all GO term info
+  
+  # helper function used to process files in a given folder and direction ("up" or "down")
+  process_files <- function(folder, direction) {
+    category_data <- data.frame()  # initialize a data frame for the category info
+    
+    for (category in go_categories) {
+      # build the exact file name pattern 
+      file_pattern <- paste0(direction, "_", category, "_", comparison_pattern, "_GO.csv")
+      # list out files matching the name pattern (should be only one per category (BP, MF, CC))
+      files <- list.files(folder, pattern = file_pattern, full.names = TRUE)
+      
+      # take the initial match (should only be one anyways)
+      if (length(files) > 0) {
+        data <- read.csv(files[1], stringsAsFactors = FALSE)
+        
+        # filter the data only keep non-NA p.adjust values and create Category and Regulation columns
+        data <- data |>
+          dplyr::filter(!is.na(p.adjust)) |>
+          dplyr::mutate(Category = category, Regulation = direction)
+        
+        # bind the data for a category to the category_data data frame
+        category_data <- dplyr::bind_rows(category_data, data)
+      } else {
+        # if no files are found (i.e. incorrect pattern input), print a warning error 
+        warning(paste("No matching file found for", direction, category, "in", folder))
+      }
+    }
+    return(category_data)  # return the collected data for the given direction
+  }
+  
+  # process both the "up" and "down" CSV file results 
+  up_data <- process_files(file.path(data_file_path, up_regulated_data), "up")
+  down_data <- process_files(file.path(data_file_path, down_regulated_data), "down")
+  
+  # combine the up-regulated and down-regulated data into a single data frame (in the form of all_data)
+  all_data <- dplyr::bind_rows(up_data, down_data)
+  
+  # if no significant (< 0.05) GO terms are found, display error 
+  if (nrow(all_data) == 0) {
+    stop("No significant GO terms found for given comparison pattern.")
+  }
+  
+  # select the top 5 GO terms 
+  top_go_data <- all_data |>
+    group_by(Category) |>
+    arrange(p.adjust) |>  # sort by smallest p.adjust to get the most significant terms (ascending order)
+    slice_head(n = top_n) |>   # select the top GO terms per category (choose how many when calling the function)
+    ungroup() |>
+    mutate(Label = paste0(ID, ": ", Description))  # create a label for each GO term (ID: Description)
+  
+  # plot the top GO terms 
+  ggplot(top_go_data, aes(x = reorder(Label, p.adjust), y = -log10(p.adjust), fill = Regulation)) +
+    geom_col(position = position_dodge(width = 0.7)) +  # use position_dodge to place up/down bars side by side
+    coord_flip() +  # flip coordinates so the bars are horizontal
+    facet_grid(Category ~ ., scales = "free_y", space = "free") +  # categories grouped together with free y-scales
+    scale_fill_manual(values = c("up" = "lightblue", "down" = "pink")) +  # set colors for up and down regulation 
+    labs(title = paste(top_n, "Most Significant GO Terms Across ONT Categories for", comparison_pattern),
+         x = "GO Term (ID: Description)", 
+         y = "-log10(p.adjust)", 
+         fill = "Regulation") +
+    theme_minimal() +
+    theme(strip.text.y = element_text(angle = 0))  # keep facet labels horizontal (for categories)
+}
+```
+
+Example run using the control group comparison:
+```{r}
+plot_top_GO_terms(comparison_pattern = "control_ko_0_vs_wt_0", top_n = 5)
 ```
