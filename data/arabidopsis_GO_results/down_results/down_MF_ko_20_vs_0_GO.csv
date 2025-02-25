@@ -1,0 +1,2 @@
+"ID","Description","GeneRatio","BgRatio","RichFactor","FoldEnrichment","zScore","pvalue","p.adjust","qvalue","geneID","Count"
+"GO:0016624","oxidoreductase activity, acting on the aldehyde or oxo group of donors, disulfide as acceptor","5/487","13/26761",0.384615384615385,21.1348918022429,9.88598065884833,0.00000223074894129513,0.000954760546874317,0.000894647733298364,"AT1G21400/AT1G55510/AT2G34590/AT3G13450/AT5G09300",5

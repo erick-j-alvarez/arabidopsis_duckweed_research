@@ -1,0 +1,2 @@
+"ID","Description","GeneRatio","BgRatio","RichFactor","FoldEnrichment","zScore","pvalue","p.adjust","qvalue","geneID","Count"
+"GO:0016602","CCAAT-binding factor complex","4/428","21/26913",0.19047619047619,11.977303070761,6.39718092716811,0.000304585114400693,0.0325906072408742,0.0323822068994421,"AT3G05690/AT3G14020/AT4G14540/AT5G47640",4
