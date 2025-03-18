@@ -24,10 +24,12 @@ The following are the necessary R-packages for running the code below:
 ```{r, results = "hide"}
 library(tidyverse)
 library(readr)
+library(RColorBrewer)
 # be sure to run install.packages("BiocManager") and use BiocManager::install("package") order to install and run the following libraries 
 library(DESeq2)
 library(apeglm)
 library(ashr)
+library(pheatmap)
 ```
 
 # 1) Peparing Count Data 
@@ -136,6 +138,7 @@ As we can see, it now returns TRUE for both conditions (matching names and same 
 
 # 2) Construct a DESeqDataSet Object
 **1/21/25**
+
 We will now be creating our DESeqDataSet object using the DESeq2 package and our recently updated and newly created data frames titled data_counts and colData, respectively. 
 
 ```{r}
@@ -163,6 +166,7 @@ We have filtered down to 27710 rows.
 
 # 3) Re-level Factors for Treatment Comparisons 
 **1/21/25**
+
 We now want to re-level and compare different treatment conditions to one another. Here are the following variations of the comparisons we will conduct: 
 
   - wild_type control vs. knockout_line control
@@ -191,6 +195,7 @@ IMPORTANT NOTE: Make sure to collapse the technical replicates before analysis; 
 
 # 4) Run DESeq2 
 **1/21/25**
+
 We can now run DESeq2 and see if our data structure works! 
 ```{r}
 # run the differential gene expression analysis
@@ -204,11 +209,11 @@ res_dds <- results(dds)
 
 # view DESeq2 results 
 res_dds
-
 ```
 
 ## Normalization 
 **1/28/25**
+
 The following code chunk is the normalization of the data's read counts for future use:
 ```{r}
 # normalization of read counts for future use 
@@ -221,11 +226,11 @@ boxplot(log10(normalized_counts))
 
 # write data to a csv file 
 write.csv(normalized_counts, file = "../data/st35_normalized_counts.csv")
-
 ```
 
 # 5) Explore DESeq2 Results
 **1/21/25**
+
 Let's begin exploring the results of the differential gene expression analysis by summarizing the results.
 
   - we will use both the default setting for p-value and our own adjusted p-value of 0.05
@@ -281,7 +286,6 @@ vsd <- vst(dds, blind = FALSE)
 
 # Alternatively, use rlog (log transformation)
 # vsd <- rlog(dds, blind = FALSE)
-
 ```
 
 ### Perform PCA 
@@ -291,7 +295,6 @@ transformed_counts <- assay(vsd)
 
 # perform PCA on the transformed counts
 pca <- prcomp(t(transformed_counts))
-
 ```
 
 ### Extract PCA Results for Plotting 
@@ -301,7 +304,6 @@ pca_dat <- as.data.frame(pca$x)  # PCA scores for each sample
 pca_dat$sample <- rownames(pca_dat)  # sample names
 pca_dat$treatment <- colData(dds)$treatment  # grouping variable (treatment condition)
 pca_dat$genotype <- colData(dds)$genotype  # add genotype to the PCA data
-
 ```
 
 ### Create PCA Plot 
@@ -318,7 +320,6 @@ ggplot(pca_dat, aes(x = PC1, y = PC2, color = treatment, shape = genotype, label
     shape = "Genotype"
   ) +
   theme_minimal()
-
 ```
 
 ## MA Plot 
@@ -472,7 +473,6 @@ I've written a function that allows for easy manipulation and production of 'dds
   - filter_low_counts = a chosen limit to filter out gene counts; default is set to no filtering if not explicitly stated 
   
 This function only works if the DESeq2 package is installed and running on the same script. 
-
 ```{r, results = 'hide'}
 dds_generator <- function(read_counts, column_data, design_parameter, filter_low_counts = NULL) {
   if (!is.character(design_parameter)) {
@@ -610,7 +610,6 @@ The following ashr_shrinkage_contrast() function utilizes the ashr shrinkage est
 All of the parameters used in the function above are used and represented the same in this one. The same checks are also in place.
 
 This function requires the ashr package to be installed and running on the same script. 
-
 ```{r, results = 'hide'}
 ashr_shrinkage_contrast <- function(dds_object, column, level_1, priority_level_2, output_dir = "../data/arabidopsis_deseq2_results/") {
   # ensure the contrast levels exist
@@ -1421,7 +1420,428 @@ plot_top_GO_terms <- function(data_file_path = "../data/arabidopsis_GO_results",
 }
 ```
 
+```{r}
+plot_top_GO_terms <- function(data_file_path = "../data/arabidopsis_GO_results", 
+                              comparison_pattern, 
+                              top_n = 5,
+                              up_regulated_data = "up_results", 
+                              down_regulated_data = "down_results",
+                              regulation_type = c("up", "down")) {
+  
+  regulation_type <- match.arg(regulation_type)  # Ensure valid input
+  
+  # Define the GO categories 
+  go_categories <- c("BP", "MF", "CC")
+  
+  # Helper function to process files for the selected regulation type
+  process_files <- function(folder, direction) {
+    category_data <- data.frame()
+    
+    for (category in go_categories) {
+      file_pattern <- paste0(direction, "_", category, "_", comparison_pattern, "_GO.csv")
+      files <- list.files(folder, pattern = file_pattern, full.names = TRUE)
+      
+      if (length(files) > 0) {
+        data <- read.csv(files[1], stringsAsFactors = FALSE) |>
+          dplyr::filter(!is.na(p.adjust)) |>
+          dplyr::mutate(Category = category, Regulation = direction)
+        
+        category_data <- dplyr::bind_rows(category_data, data)
+      } else {
+        warning(paste("No matching file found for", direction, category, "in", folder))
+      }
+    }
+    return(category_data)
+  }
+  
+  # Process the selected regulation type
+  data_folder <- ifelse(regulation_type == "up", up_regulated_data, down_regulated_data)
+  selected_data <- process_files(file.path(data_file_path, data_folder), regulation_type)
+  
+  # If no significant (< 0.05) GO terms are found, stop execution
+  if (nrow(selected_data) == 0) {
+    stop("No significant GO terms found for the given comparison pattern.")
+  }
+  
+  # Select the top GO terms
+  top_go_data <- selected_data |>
+    group_by(Category) |>
+    arrange(p.adjust) |>
+    slice_head(n = top_n) |>
+    ungroup() |>
+    mutate(Label = paste0(ID, ": ", Description))
+  
+  # Plot the selected regulation type
+  ggplot(top_go_data, aes(x = reorder(Label, p.adjust), y = -log10(p.adjust), fill = Regulation)) +
+    geom_col() +
+    coord_flip() +
+    facet_grid(Category ~ ., scales = "free_y", space = "free") +
+    scale_fill_manual(values = c("up" = "lightblue", "down" = "pink")) +
+    labs(title = paste(top_n, "Most Significant GO Terms for", regulation_type, "Regulation in", comparison_pattern),
+         x = "GO Term (ID: Description)", 
+         y = "-log10(p.adjust)", 
+         fill = "Regulation") +
+    theme_minimal() +
+    theme(strip.text.y = element_text(angle = 0))
+}
+```
+
 Example run using the control group comparison:
 ```{r}
-plot_top_GO_terms(comparison_pattern = "control_ko_0_vs_wt_0", top_n = 5)
+plot_top_GO_terms(comparison_pattern = "control_ko_0_vs_wt_0", top_n = 5, regulation_type = "up")
+
+plot_top_GO_terms(comparison_pattern = "control_ko_0_vs_wt_0", top_n = 5, regulation_type = "down")
+
+```
+
+```{r}
+check |>
+  arrange(p.adjust)|>
+  slice_head(n = 7) |>
+  dplyr::select(ID, Description, p.adjust)
+
+```
+
+# 9) DEG Visualization 
+The following code is going to explore the various results stemming from our differential gene expression analysis through a few visualization techniques. 
+
+## Heat Map 
+**3/18/25**
+
+Using the a dds object comparison and its results object produced earlier in the script, we will be making a heat map that demonstrates the pattern regarding the highest 50 and lowest 50 differential expressed genes according to their log2FoldChange value. This is simply to visualize the pattern. 
+
+For this initial example, we will be using dds_controls and res_dds_controls which are the dds objects comparing ko_0 vs. wt_0. I mainly started with this because it did not need any further contrasting but if we want to test more we would have to contrast accordingly to the samples. 
+
+This heat map filters out for padj < 0.05 and omits the NA values found in the padj column:  
+```{r, echo = FALSE}
+# we are using the results of the dds object for the control samples (ko_0 vs. wt_0) mainly because we didn't have to contrast anything and I was tired of coding (dds object: dds_controls; result dds object: res_dds_controls)
+
+# filter results to include only genes with padj < 0.05 and omit those with a padj == NA 
+filtered_res_dds_controls <- res_dds_controls[!is.na(res_dds_controls$padj) & res_dds_controls$padj < 0.05, ]
+
+# sort the results by log2FoldChange, highest to lowest, and lowest to highest
+largest_fc <- head(filtered_res_dds_controls[order(filtered_res_dds_controls$log2FoldChange, decreasing = TRUE), ], 50) # top 50 up regulated
+smallest_fc <- head(filtered_res_dds_controls[order(filtered_res_dds_controls$log2FoldChange), ], 50)  # top 50 down regulated 
+
+# combine the two sets of fc results 
+high_and_low_50_genes <- c(rownames(largest_fc), rownames(smallest_fc))
+
+# extract normalized counts using DESeq2's vst() function
+normalized_dds_controls_counts <- assay(vst(dds_controls))[high_and_low_50_genes, ]
+
+# create a heat map using pheatmap()
+pheatmap(normalized_dds_controls_counts, 
+         cluster_rows = TRUE, 
+         cluster_cols = TRUE, 
+         scale = "row", 
+         show_rownames = TRUE, 
+         show_colnames = TRUE,
+         fontsize = 10,            # adjust for column labels
+         fontsize_row = 6,         # adjust for row labels
+         height = 300,             # make the plot significantly longer 
+         width = 12,               # adjust width as needed
+         main = "Heatmap of 50 Largest and Smallest log2FoldChange Genes (padj < 0.05) \nOnly Control Samples: wt_0 vs.ko_0")
+```
+
+This heat map lacks filtering for padj < 0.05 (i.e. includes everything): 
+```{r, echo = FALSE}
+# sort the results by log2FoldChange, highest to lowest, and lowest to highest
+largest_fc <- head(res_dds_controls[order(res_dds_controls$log2FoldChange, decreasing = TRUE), ], 50) # top 50 up regulated
+smallest_fc <- head(res_dds_controls[order(res_dds_controls$log2FoldChange), ], 50)  # top 50 down regulated 
+
+# combine the two sets of fc results 
+high_and_low_50_genes <- c(rownames(largest_fc), rownames(smallest_fc))
+
+# extract normalized counts using DESeq2's vst() function
+normalized_dds_controls_counts <- assay(vst(dds_controls))[high_and_low_50_genes, ]
+
+# create a heat map using pheatmap()
+pheatmap(normalized_dds_controls_counts, 
+         cluster_rows = TRUE, 
+         cluster_cols = TRUE, 
+         scale = "row", 
+         show_rownames = TRUE, 
+         show_colnames = TRUE,
+         fontsize = 10,            # adjust for column labels
+         fontsize_row = 6,         # adjust for row labels
+         height = 300,             # make the plot significantly longer 
+         width = 12,               # adjust width as needed
+         main = "Heatmap of 50 Largest and Smallest log2FoldChange Genes (No padj filter) \nOnly Control Samples: wt_0 vs. ko_0")
+```
+
+**Should we filter the padj or leave it as is? Should we use normalized counts? I'm assuming yes!**
+
+## KEGG Pathway Analysis 
+**3/17/25**
+
+The following code will utilize KEGG Pathway Analysis to both find and visualize certain biological pathways and how they are affected by the up and down regulation of certain genes. 
+
+Use the following packages (as well as the others used in this script so far) to conduct this analysis. 
+```{r}
+library(DOSE)
+library(pathview)
+
+# search database to make sure our organism is actually available (newsflash: it is)
+search_kegg_organism('Arabidopsis thaliana', by = 'scientific_name')
+```
+
+IGNORE THE SECTION TITLED 'CONVERT TAIR IDS TO ENTREZ IDS' BECAUSE ACCORDING TO THE FOLLOWING:
+```{r, echo = FALSE}
+data(korg)
+ri=korg[,"kegg.code"]=="ath"
+korg[ri,]
+```
+WE ACTUALLY DO NOT NEED THE ENTREZID IN ORDER TO CONDUCT KEGG PATHWAY ANALYSIS USING ENRICHKEGG() AND CLUSTERPROFILER FOR ARABIDOPSIS! 
+
+### Convert TAIR IDs to ENTREZ IDs (IGNORE THIS)
+THE FOLLOWING CODE IS SIMPLY FOR REFERENCE:
+```{r, results = 'hide'}
+# choose any of the Deseq2 resulting data sets (I'm testing knockout-line vs. wild-type controls)
+
+# copy original data frame and remove tailing ".1" to match TAIR format 
+df_dds_controls_ko_vs_wt_entrez <- df_dds_controls_knockout_line_vs_wild_type |>
+  mutate(GeneID = sub("\\.\\d+$", "", GeneID))
+
+# extract the GeneID column
+tair_ids_controls <- df_dds_controls_ko_vs_wt_entrez$GeneID
+
+# convert TAIR IDs to ENTREZ IDs
+entrez_mapping_controls <- select(org.At.tair.db, keys = tair_ids_controls, keytype = "TAIR", columns = "ENTREZID")
+
+# when matching TAIR IDs to ENTREZ IDs, a warning denotes that there are many:1 mapping instances of TAIR to ENTREZ (i.e. various instances of the same TAIR values being matched to the same ENTREZ values). This is due to transcript variety (.1 vs. .3, but I think that should be fine). Is it? 
+entrez_mapping_controls |>
+  dplyr::count(TAIR) |>
+  dplyr::filter(n > 1)
+
+# merge with newly made _entrez data frame to keep track of IDs
+df_dds_controls_ko_vs_wt_entrez <- merge(df_dds_controls_ko_vs_wt_entrez, 
+                                         entrez_mapping_controls, 
+                                         by.x = "GeneID", by.y = "TAIR", all.x = TRUE)
+
+# move the newly created ENTREZID next to the GeneID column and remove duplicates 
+df_dds_controls_ko_vs_wt_entrez <- df_dds_controls_ko_vs_wt_entrez |>
+  dplyr::select(GeneID, ENTREZID, everything()) |>
+  distinct() # collapsed a few duplicate entries due to many:1 mapping 
+
+# View(df_dds_controls_ko_vs_wt_entrez)
+```
+
+IGNORE THIS AS WELL! 
+```{r}
+# add a new column (regulation) that signifies UP or DOWN according to the log2FoldChange 
+df_dds_controls_ko_vs_wt_entrez <- df_dds_controls_ko_vs_wt_entrez |>
+  mutate(regulation = case_when(
+    log2FoldChange > 0 ~ "UP",
+    log2FoldChange < 0 ~ "DOWN"
+  ))
+
+# omits rows with NA values in the ENTREZID column 
+df_dds_controls_ko_vs_wt_entrez <- df_dds_controls_ko_vs_wt_entrez[!is.na(df_dds_controls_ko_vs_wt_entrez$ENTREZID), ]
+```
+
+### Prepare Gene List 
+```{r}
+# select whichever Deseq2 results you like (I'm testing knockout-line vs. wild-type controls)
+
+# remove tailing ".1" to match TAIR format (remember: padj is already < 0.05 so we don't have to filter)
+dds_kegg_controls <- df_dds_controls_knockout_line_vs_wild_type |>
+  mutate(GeneID = sub("\\.\\d+$", "", GeneID))
+
+# prepare the gene list for KEGG analysis
+geneList_controls <- dds_kegg_controls$log2FoldChange # makes vector with log2FoldChange values 
+names(geneList_controls) <- dds_kegg_controls$GeneID # adds GeneID to the vector 
+```
+
+### KEGG Pathway Over-Representation Analysis 
+```{r}
+# run KEGG enrichment analysis on the entire (both up and down regulated genes) geneList_controls and produce a list of over-represented pathways we can then visualize in the next step 
+kegg_ora_analysis_controls <- enrichKEGG(gene = names(geneList_controls),
+                                     organism     = 'ath', 
+                                     pvalueCutoff = 0.05)
+
+View(kegg_ora_analysis_controls)
+```
+
+We can then visualize one of the particular pathways: 
+  
+  - **I'M STUCK HERE! Why isn't it mapping to an ID when the ORA analysis clearly shows this specific pathway is in it and also can find it via browseKEGG()? WHY ISN'T THIS WORKING?"**
+
+Remove 'eval = FALSE' when it starts working . . .
+```{r, eval = FALSE}
+# use pathview() to visualize the pathway 
+pathview(gene.data     = geneList_controls, # input gene list (log2FoldChange)
+         pathway.id    = "AT1G26560", # pathway ID we want to visualize
+         species       = "ath",         # arabidopsis species 
+         out.suffix    = "pathway")
+
+# can use the following to verify if the actual pathway even exists
+browseKEGG(kegg_ora_analysis_controls, 'AT1G26560')
+```
+
+### KEGG Pathway Gene Set Enrichment Analysis 
+THE FOLLOWING IS NOT WORKING...or is it:
+```{r, eval = FALSE}
+# remove duplicates by keeping the first occurrence
+geneList_controls_unique <- geneList_controls[!duplicated(names(geneList_controls))]
+
+# sort the gene list in decreasing order of log2FoldChange
+geneList_controls_sorted <- sort(geneList_controls_unique, decreasing = TRUE)
+
+# NOT WORKING!!!
+# run KEGG pathway gene set enrichment analysis 
+kegg_gsea_controls <- gseKEGG(geneList     = geneList_controls_sorted,
+                              organism     = 'ath',
+                              pvalueCutoff = 0.05) 
+```
+
+## Confirming or Contradicting GO Analysis using plotCounts()
+**3/18/25**
+
+The following function, plot_gene_counts(), is a makeshift function that takes arguements and feeds them into the Deseq2 built-in function called plotCounts(). This allows us to visualize specific genes and their counts found in specific dds objects and contrasts. It takes a few arguements: 
+
+  - dds = the dds object you will be using (not the results but a DESeqDataSet)
+  - genes = one or more genes (just make sure to use a list for multiple) of your choosing found in the dds
+  - intgroup = a specific column or condition that was found in colData that we want to differentiate by 
+  - filter_groups = the specific groups found within intgroup that you wish to contrast 
+  
+These parameters allow us to use the few dds objects made earlier in this script and stil contrast specific samples accordingly. 
+
+The function can take a single gene or a list of genes and will simply facet wrap it so that we can avoid making a ton of unnecessary plots for the same contrast conditions and varying genes. I would only suggest to do 2 or 3 genes at a time. 
+
+  - Note: because of the way the x-axis and the points are handled, the plot of a single gene make look slightly different
+  to its version within a facetted plot. This is simply the effect of moving the points in different positions on the
+  x-axis, something that actually has no bearing on the y-axis positions and thus retains the integrity of the count and
+  plotting structure. At a quick glance, it may seem a bit off but don't stress, it is the exact same; don't
+  believe me? Compare and contrast! 
+
+In this particular script, the choice of re-leveled dds objects we have are:
+
+  - dds_controls (control samples)
+  - dds_treatment (treatment vs. treatment samples of both wild-type and knockout-line)
+  - dds_ko (only knockout-line treatment samples)
+  - dds_wt (only wild-type treatment samples)
+
+They are also found in the title of each plot distinguishing the plots from one another (especially for dds_ko and dds_wt which only use numbers for their x-axis). 
+  
+Use any of these and specify according to a particular gene, intgroup which is a colData column used in the original contrast (group vs. treatment vs. genotype), and specific samples for filter_groups (wt_0 vs. ko_0).
+
+Compare the clustering of points to the log2FoldChange of your chosen gene(s). Remember that the log2FoldChange represents up or down regulation relative to the reference level which has been set as the wild-type control, wild-type variant, or knockout-line control where appropriate. Then, physically look at the log2FoldChange value and if, for example, it is negative, make sure its clustering is lower than the reference level clustering on the graph. Vice versa if positive. If both sets of clustering are close together, that is indicative of a fairly small padj value. We are just trying to make sure that the log2FoldChange is accurately demonstrating up or down regulation via the normalized counts. 
+
+  - do 2 or 3 genes per dds object and contrast 
+  
+Lastly, I've included a red dot that is representative of the mean value between the triplicate for each sample. You could remove that if you'd like. 
+
+**Should I use normalized counts like plotCounts() normally does or should I use the raw counts as accomplished by changing: plot_data <- plotCounts(dds, gene = "AT1G02280.1", intgroup = "group", returnData = TRUE, normalized = FALSE)**
+```{r}
+plot_gene_counts <- function(dds, genes, intgroup, filter_groups) {
+  # pull name of the dds object
+  dds_name <- deparse(substitute(dds))
+  
+  # extract plot data for multiple genes
+  plot_data_list <- lapply(genes, function(gene) {
+    plot_data <- plotCounts(dds, gene = gene, intgroup = intgroup, returnData = TRUE)
+    plot_data$gene <- gene  # Add gene identifier
+    plot_data
+  })
+  
+  # combine into a single data frame
+  plot_data_combined <- bind_rows(plot_data_list)
+  
+  # filter based on specified groups
+  plot_data_filtered <- plot_data_combined |>
+    filter(.data[[intgroup]] %in% filter_groups)
+
+  # generate plot title dynamically
+  plot_title <- paste("Gene Counts for", paste(filter_groups, collapse = " vs. "),
+                      "\nData from:", dds_name)
+  
+  # create the plot with facet_wrap
+  ggplot(plot_data_filtered, aes_string(x = intgroup, y = "count")) +
+    geom_jitter(width = 0.2, size = 3, alpha = 0.6) +
+    stat_summary(fun = "mean", geom = "point", size = 4, color = "red") +
+    theme_minimal(base_size = 14) +
+    labs(title = plot_title, y = "Normalized Counts", x = "Condition") +
+    facet_wrap(~gene, scales = "free_y") +
+    theme(
+      strip.background = element_rect(fill = "lightgray", color = "black", size = 1.5),  # Highlight facet labels
+      strip.text = element_text(face = "bold", size = 12),  # Make facet labels bold
+      panel.border = element_rect(color = "black", fill = NA, size = 1)  # Add borders to panels
+    )
+}
+
+# example when using a single gene from dds_treatment (ko_20 vs. wt_20)
+plot_gene_counts(dds_treatment, genes = "AT1G19350.4", 
+                 intgroup = "group", filter_groups = c("ko_20", "wt_20"))
+
+
+# example when using multiple genes from dds_treatment (ko_20 vs. wt_20)
+plot_gene_counts(dds_treatment, genes = c("AT1G02280.1", "AT1G19350.4"), 
+                 intgroup = "group", filter_groups = c("ko_20", "wt_20"))
+```
+
+Since we've already done 2 genes for ko_20 vs. wt_20 above, let's continue and do at least 2 genes for each contrast we've done thus far. 
+
+The remaning KO Treatment vs. WT Treatment contrasts: 
+```{r, echo = FALSE}
+# dds_treatment: ko_40 vs. wt_40 
+plot_gene_counts(dds_treatment, genes = c("AT1G18870.1", "AT1G20480.1"), 
+                 intgroup = "group", filter_groups = c("ko_40", "wt_40"))
+
+# dds_treatment: ko_60 vs. wt_60
+plot_gene_counts(dds_treatment, genes = c("AT1G28230.1", "AT1G15010.1"), 
+                 intgroup = "group", filter_groups = c("ko_60", "wt_60"))
+
+# dds_treatment: ko_80 vs. wt_80
+plot_gene_counts(dds_treatment, genes = c("AT1G69572.1", "AT2G15020.1"), 
+                 intgroup = "group", filter_groups = c("ko_80", "wt_80"))
+```
+
+Only Controls: 
+```{r, echo = FALSE}
+# dds_controls: knockout_line vs. wild_type (ko_0 vs. wt_0)
+plot_gene_counts(dds_controls, genes = c("AT1G01390.1", "AT1G02640.1"), 
+                 intgroup = "genotype", filter_groups = c("knockout_line", "wild_type"))
+```
+
+```{r}
+# code for if you ever want to view the normalized counts used for plotting the graph of a specific gene and compare to plot; I've compared and it has looked great so far
+counts(dds_controls, normalized = TRUE)["AT1G02640.1", ] # specific to a particular gene 
+```
+
+Only Wild-Type Samples: 
+```{r, echo = FALSE}
+# dds_wt: wt_0 vs. wt_20 
+plot_gene_counts(dds_wt, genes = c("AT1G01560.1", "AT1G02520.1"), 
+                 intgroup = "treatment", filter_groups = c("20", "0"))
+
+# dds_wt: wt_0 vs. wt_40
+plot_gene_counts(dds_wt, genes = c("AT1G01750.1", "AT1G02065.1"), 
+                 intgroup = "treatment", filter_groups = c("40", "0"))
+
+# dds_wt: wt_0 vs. wt_60
+plot_gene_counts(dds_wt, genes = c("AT1G02640.1", "AT1G04770.1"), 
+                 intgroup = "treatment", filter_groups = c("60", "0"))
+
+# dds_wt: wt_0 vs. wt_80 
+plot_gene_counts(dds_wt, genes = c("AT1G01520.1", "AT1G03090.2"), 
+                 intgroup = "treatment", filter_groups = c("80", "0"))
+```
+
+Only Knockout-Line Samples: 
+```{r, echo = FALSE}
+# dds_ko: ko_0 vs. ko_20 
+plot_gene_counts(dds_ko, genes = c("AT1G12560.1", "AT1G14440.1"), 
+                 intgroup = "treatment", filter_groups = c("20", "0"))
+
+# dds_ko: ko_0 vs. ko_40 
+plot_gene_counts(dds_ko, genes = c("AT1G02660.1", "AT1G03700.1"), 
+                 intgroup = "treatment", filter_groups = c("40", "0"))
+
+# dds_ko: ko_0 vs. ko_60 
+plot_gene_counts(dds_ko, genes = c("AT1G01750.1", "AT1G02620.1"), 
+                 intgroup = "treatment", filter_groups = c("60", "0"))
+
+# dds_ko: ko_0 vs. ko_80 
+plot_gene_counts(dds_ko, genes = c("AT1G05835.1", "AT1G07500.1"), 
+                 intgroup = "treatment", filter_groups = c("80", "0"))
 ```
