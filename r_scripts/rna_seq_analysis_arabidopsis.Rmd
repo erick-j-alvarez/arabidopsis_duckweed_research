@@ -1428,12 +1428,12 @@ plot_top_GO_terms <- function(data_file_path = "../data/arabidopsis_GO_results",
                               down_regulated_data = "down_results",
                               regulation_type = c("up", "down")) {
   
-  regulation_type <- match.arg(regulation_type)  # Ensure valid input
+  regulation_type <- match.arg(regulation_type)  # ensure valid input
   
-  # Define the GO categories 
+  # define the GO categories 
   go_categories <- c("BP", "MF", "CC")
   
-  # Helper function to process files for the selected regulation type
+  # helper function to process files for the selected regulation type
   process_files <- function(folder, direction) {
     category_data <- data.frame()
     
@@ -1454,16 +1454,16 @@ plot_top_GO_terms <- function(data_file_path = "../data/arabidopsis_GO_results",
     return(category_data)
   }
   
-  # Process the selected regulation type
+  # process the selected regulation type
   data_folder <- ifelse(regulation_type == "up", up_regulated_data, down_regulated_data)
   selected_data <- process_files(file.path(data_file_path, data_folder), regulation_type)
   
-  # If no significant (< 0.05) GO terms are found, stop execution
+  # if no significant (< 0.05) GO terms are found, stop execution
   if (nrow(selected_data) == 0) {
     stop("No significant GO terms found for the given comparison pattern.")
   }
   
-  # Select the top GO terms
+  # select the top GO terms
   top_go_data <- selected_data |>
     group_by(Category) |>
     arrange(p.adjust) |>
@@ -1471,7 +1471,7 @@ plot_top_GO_terms <- function(data_file_path = "../data/arabidopsis_GO_results",
     ungroup() |>
     mutate(Label = paste0(ID, ": ", Description))
   
-  # Plot the selected regulation type
+  # plot the selected regulation type
   ggplot(top_go_data, aes(x = reorder(Label, p.adjust), y = -log10(p.adjust), fill = Regulation)) +
     geom_col() +
     coord_flip() +
