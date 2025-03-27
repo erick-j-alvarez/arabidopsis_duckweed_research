@@ -556,7 +556,7 @@ dds_ko
 To allow for easier reproducibility and less redundancy in the code, I've written two functions that allow for producing dynamic contrasts that utilize either apeglm shrinkage with coefficients or ashr shrinkage with contrasts, and writes the output to a dynamically named CSV file.
 
 ### coef_shrinkage_contrast() Function 
-As mentioned, the coef_shrinkage_contrast() function using apeglm shrinkage and coefficients from the 'dds' levels. This is especially useful to maintain indepdence amongst comparisons and the factor levels. 
+As mentioned, the coef_shrinkage_contrast() function using apeglm shrinkage and coefficients from the 'dds' levels. This is especially useful to maintain independence amongst comparisons and the factor levels. 
 
   - dds_object = the specific 'dds' object used for the contrast 
   - column = the specific column used to reference the factor levels being contrasted 
@@ -568,7 +568,6 @@ As mentioned, the coef_shrinkage_contrast() function using apeglm shrinkage and 
 This function also dynamically incorporates the proper coefficient using the column, level_1, and priority_level_2 parameters. It also has a built-in check to make sure the coefficient exists in said dds object.
   
 This function requires the apeglm package installed and running on the same script to work. 
-
 ```{r, results = 'hide'}
 coef_shrinkage_contrast <- function(dds_object, column, level_1, priority_level_2, output_dir = "../data/arabidopsis_deseq2_results/") {
   # construct the expected coefficient name
@@ -644,7 +643,7 @@ ashr_shrinkage_contrast <- function(dds_object, column, level_1, priority_level_
 ```
 
 ## Run Varying DESeq2 Analyses and Contrasts
-Below will contain the code running all of the various DESeq2 analyses we need along with specific contrasts. Each contrast will be written to a CSV file that will be used for further analyses. There will be many files saved to a subdirectory within my 'data' directory. 
+Below will contain the code running all of the various DESeq2 analyses we need along with specific contrasts. Each contrast will be written to a CSV file that will be used for further analyses. There will be many files saved to a sub directory within my 'data' directory. 
 
 ### KO Treatment vs. WT Treatment 
 ```{r}
@@ -660,7 +659,7 @@ res_dds_treatment <- results(dds_treatment)
 # view DESeq2 results 
 res_dds_treatment
 
-# summary results of res_dds_treatment (with re-level of group = wt_0)
+# summary results of res_dds_treatment (with re-level of group = wt_0); general summary 
 summary(res_dds_treatment, 0.05)
 ```
 
@@ -671,9 +670,46 @@ We will be using the ashr_shrinkage_contrast() function for the comparisons rega
 ashr_shrinkage_contrast(dds_treatment, "group", "ko_20", "wt_20")
 ```
 
+**3/27/25**
+The following is a code chunk that shows the summary results of a dds object that has undergone DESeq2 analysis (in this case, dds_treatment) with a specific contrast. The information regarding up and down regulated gene counts/percentages are recorded in two separate Excel files in the 'data' directory. 
+
+The two files contain 7 of the 8 columns below: 
+
+  - comparison = the particular dds object used for the DESeq2 analysis 
+    - the general comparison without any particular contrasts (e.g. wt vs. ko as a whole; not contrasted any more specifically than that
+    using the results from the dds object called dds_treatment)
+  - contrast = the particular dds object used for the DESeq2 analysis using more specific contrast parameters 
+    - the more specific contrast comparison (e.g. using the column "group", we contrasted "ko_20" against "wt_20" using the results from
+    the dds object called dds_treatment)
+  - up_counts = the number of genes with a positive Log2FoldChange (up-regulated)
+  - up_percent = the percentage of genes with a positive Log2FoldChange (up-regulated)
+  - down_counts = the number of genes with a negative Log2FoldChange (down-regulated)
+  - up_percent = the percentage of genes with a positive Log2FoldChange (up-regulated)
+  - total_count = the total number of reads 
+  - padj_threshold = the adjusted p-value threshold used to filter the summary results (e.g. a cell value of 0.05 means that the
+  counts/percentages only applied to genes with an adjusted p-value < 0.05)
+  
+Note: No shrinkage has been applied to these summary results. Shrinkage was only applied to the output CSV files associated with the ashr_shrinkage_contrast() and coef_shrinkage_contrast() functions. 
+
+The file titled "general_at_deseq_results_summary.xlsx" is the generalized summary without contrasts and uses the column labeled comparison.
+The file titled "contrast_at_deseq_results_summary.xlsx" is the more specific summary using contrasts and uses the column labeled contrast. Both files contain the rest of the columns. 
+
+  - 'at' stands for Arabidopsis thaliana
+  
+The code chunks for the remaining result summaries will be hidden in this R Markdown file but the results will still be displayed. Also, due to how few contrasts there actually are and columns associated, I simply added these values into their files by hand. 
+```{r}
+# summarized results of dds_treatment with contrast of ko_20 vs. wt_20 and adjusted p-value < 0.05 
+summary(results(dds_treatment, contrast = c("group", "ko_20", "wt_20")), 0.05)
+```
+
 #### WT_40 vs. KO_40 
 ```{r, results = 'hide'}
 ashr_shrinkage_contrast(dds_treatment, "group", "ko_40", "wt_40")
+```
+
+```{r, echo = FALSE}
+# summarized results of dds_treatment with contrast of ko_40 vs. wt_40 and adjusted p-value < 0.05 
+summary(results(dds_treatment, contrast = c("group", "ko_40", "wt_40")), 0.05)
 ```
 
 #### WT_60 vs. KO_60 
@@ -681,9 +717,19 @@ ashr_shrinkage_contrast(dds_treatment, "group", "ko_40", "wt_40")
 ashr_shrinkage_contrast(dds_treatment, "group", "ko_60", "wt_60")
 ```
 
+```{r, echo = FALSE}
+# summarized results of dds_treatment with contrast of ko_60 vs. wt_60 and adjusted p-value < 0.05 
+summary(results(dds_treatment, contrast = c("group", "ko_60", "wt_60")), 0.05)
+```
+
 #### WT_80 vs. KO_80 
 ```{r, results = 'hide'}
 ashr_shrinkage_contrast(dds_treatment, "group", "ko_80", "wt_80")
+```
+
+```{r, echo = FALSE}
+# summarized results of dds_treatment with contrast of ko_80 vs. wt_80 and adjusted p-value < 0.05 
+summary(results(dds_treatment, contrast = c("group", "ko_80", "wt_80")), 0.05)
 ```
 
 ### Only Controls 
@@ -710,10 +756,14 @@ The vignette's on DESeq2 describe apeglm as a higher performance estimator than 
 
 #### WT_0 vs. KO_0 
 I honestly should not need to even contrast this as the only rows in the 'dds_controls' are the triplactes of the control groups for both the knockout_line and the wild_type variants. However, I have the run_shrinkage_contrast() function already and it seems to work pretty well, and incorporates shrinkage so we will just use it. 
-
-**Will contrasting have any negative effect on the outcome of an already completed comparison?**
 ```{r, results = 'hide'}
 coef_shrinkage_contrast(dds_controls, "genotype", "knockout_line", "wild_type")
+```
+
+```{r, echo = FALSE}
+# summarized results of dds_controls with contrast of knockout_line vs. wild_type and adjusted p-value < 0.05 
+# note: same as without the contrast (the general summary) as they are the only two samples within the DESeq2 analysis anyway but we will leave this here regardless 
+summary(results(dds_controls, contrast = c("genotype", "knockout_line", "wild_type")), 0.05)
 ```
 
 ### Only Wild-Type Samples 
@@ -739,9 +789,19 @@ summary(res_dds_wt, 0.05)
 coef_shrinkage_contrast(dds_wt, "treatment", "20", "0")
 ```
 
+```{r, echo = FALSE}
+# summarized results of dds_wt with contrast of wt_0 vs. wt_20 and adjusted p-value < 0.05 
+summary(results(dds_wt, contrast = c("treatment", "20", "0")), 0.05)
+```
+
 #### WT_0 vs. WT_40 
 ```{r, results = 'hide'}
 coef_shrinkage_contrast(dds_wt, "treatment", "40", "0")
+```
+
+```{r, echo = FALSE}
+# summarized results of dds_wt with contrast of wt_0 vs. wt_40 and adjusted p-value < 0.05 
+summary(results(dds_wt, contrast = c("treatment", "40", "0")), 0.05)
 ```
 
 #### WT_0 vs. WT_60
@@ -749,9 +809,19 @@ coef_shrinkage_contrast(dds_wt, "treatment", "40", "0")
 coef_shrinkage_contrast(dds_wt, "treatment", "60", "0")
 ```
 
+```{r, echo = FALSE}
+# summarized results of dds_wt with contrast of wt_0 vs. wt_60 and adjusted p-value < 0.05 
+summary(results(dds_wt, contrast = c("treatment", "60", "0")), 0.05)
+```
+
 #### WT_0 vs. WT_80 
 ```{r, results = 'hide'}
 coef_shrinkage_contrast(dds_wt, "treatment", "80", "0")
+```
+
+```{r, echo = FALSE}
+# summarized results of dds_wt with contrast of wt_0 vs. wt_80 and adjusted p-value < 0.05 
+summary(results(dds_wt, contrast = c("treatment", "80", "0")), 0.05)
 ```
 
 ### Only Knockout-Line Samples
@@ -770,7 +840,6 @@ res_dds_ko
 
 # summary results of res_dds_ko (with re-level of treatment = 0 for knockout_line)
 summary(res_dds_ko, 0.05)
-
 ```
 
 #### KO_0 vs. KO_20
@@ -778,9 +847,19 @@ summary(res_dds_ko, 0.05)
 coef_shrinkage_contrast(dds_ko, "treatment", "20", "0")
 ```
 
+```{r, echo = FALSE}
+# summarized results of dds_ko with contrast of ko_0 vs. ko_20 and adjusted p-value < 0.05 
+summary(results(dds_ko, contrast = c("treatment", "20", "0")), 0.05)
+```
+
 #### KO_0 vs. KO_40
 ```{r, results = 'hide'}
 coef_shrinkage_contrast(dds_ko, "treatment", "40", "0")
+```
+
+```{r, echo = FALSE}
+# summarized results of dds_ko with contrast of ko_0 vs. ko_40 and adjusted p-value < 0.05 
+summary(results(dds_ko, contrast = c("treatment", "40", "0")), 0.05)
 ```
 
 #### KO_0 vs. KO_60
@@ -788,9 +867,19 @@ coef_shrinkage_contrast(dds_ko, "treatment", "40", "0")
 coef_shrinkage_contrast(dds_ko, "treatment", "60", "0")
 ```
 
+```{r, echo = FALSE}
+# summarized results of dds_ko with contrast of ko_0 vs. ko_60 and adjusted p-value < 0.05 
+summary(results(dds_ko, contrast = c("treatment", "60", "0")), 0.05)
+```
+
 #### KO_0 vs. KO_80
 ```{r, results = 'hide'}
 coef_shrinkage_contrast(dds_ko, "treatment", "80", "0")
+```
+
+```{r, echo = FALSE}
+# summarized results of dds_ko with contrast of ko_0 vs. ko_80 and adjusted p-value < 0.05 
+summary(results(dds_ko, contrast = c("treatment", "80", "0")), 0.05)
 ```
 
 # CSV Naming Key
@@ -1339,87 +1428,13 @@ count_GO_terms(comparison_pattern = "ko_80_vs_0")
 ## plot_top_GO_terms() Function 
 **Double check that this works correctly by looking at the values directly; I think it struggles when there are matching values**
 
-The following function uses a similar logic as the count_GO_terms() function. The difference is that instead of making a table with significant GO term counts, it makes a horizontal bar plot that displays the most significant GO terms for each category (BP, MF, CC) across both the up and down regulated gene annotations for a particular comparison. In other words, it parses through all associated data sets for the chosen comparison_pattern and finds the smallest p.adjust values across the up and down regulated genes combined. It then separates them by category. 
+The following function uses a similar logic as the count_GO_terms() function. The difference is that instead of making a table with significant GO term counts, it makes a horizontal bar plot that displays the most significant GO terms for each category (BP, MF, CC) across either the up or down regulated gene annotations for a particular comparison. In other words, it parses through all associated data sets for the chosen comparison_pattern and finds the smallest p.adjust values across either the up or down regulated genes. It then separates them by GO category. 
 
-The function's arguments are the same as the count_GO_terms() function, however, there is now an option to select how many significant terms we want in the plot. 
+The function's arguments are the same as the count_GO_terms() function, however, there is now the options to select how many significant terms we want in the plot and whether we want to plot the up or down regular genes. 
 
   - top_n = how many significant terms we want to include in the plot (top 3, top 5, top 7, top 10, etc.)
     - Default is 5 
-```{r}
-plot_top_GO_terms <- function(data_file_path = "../data/arabidopsis_GO_results", 
-                              comparison_pattern, 
-                              top_n = 5,
-                              up_regulated_data = "up_results", 
-                              down_regulated_data = "down_results") {
-  
-  # define the GO categories 
-  go_categories <- c("BP", "MF", "CC")
-  all_data <- data.frame()  # initialize a data frame to store all GO term info
-  
-  # helper function used to process files in a given folder and direction ("up" or "down")
-  process_files <- function(folder, direction) {
-    category_data <- data.frame()  # initialize a data frame for the category info
-    
-    for (category in go_categories) {
-      # build the exact file name pattern 
-      file_pattern <- paste0(direction, "_", category, "_", comparison_pattern, "_GO.csv")
-      # list out files matching the name pattern (should be only one per category (BP, MF, CC))
-      files <- list.files(folder, pattern = file_pattern, full.names = TRUE)
-      
-      # take the initial match (should only be one anyways)
-      if (length(files) > 0) {
-        data <- read.csv(files[1], stringsAsFactors = FALSE)
-        
-        # filter the data only keep non-NA p.adjust values and create Category and Regulation columns
-        data <- data |>
-          dplyr::filter(!is.na(p.adjust)) |>
-          dplyr::mutate(Category = category, Regulation = direction)
-        
-        # bind the data for a category to the category_data data frame
-        category_data <- dplyr::bind_rows(category_data, data)
-      } else {
-        # if no files are found (i.e. incorrect pattern input), print a warning error 
-        warning(paste("No matching file found for", direction, category, "in", folder))
-      }
-    }
-    return(category_data)  # return the collected data for the given direction
-  }
-  
-  # process both the "up" and "down" CSV file results 
-  up_data <- process_files(file.path(data_file_path, up_regulated_data), "up")
-  down_data <- process_files(file.path(data_file_path, down_regulated_data), "down")
-  
-  # combine the up-regulated and down-regulated data into a single data frame (in the form of all_data)
-  all_data <- dplyr::bind_rows(up_data, down_data)
-  
-  # if no significant (< 0.05) GO terms are found, display error 
-  if (nrow(all_data) == 0) {
-    stop("No significant GO terms found for given comparison pattern.")
-  }
-  
-  # select the top 5 GO terms 
-  top_go_data <- all_data |>
-    group_by(Category) |>
-    arrange(p.adjust) |>  # sort by smallest p.adjust to get the most significant terms (ascending order)
-    slice_head(n = top_n) |>   # select the top GO terms per category (choose how many when calling the function)
-    ungroup() |>
-    mutate(Label = paste0(ID, ": ", Description))  # create a label for each GO term (ID: Description)
-  
-  # plot the top GO terms 
-  ggplot(top_go_data, aes(x = reorder(Label, p.adjust), y = -log10(p.adjust), fill = Regulation)) +
-    geom_col(position = position_dodge(width = 0.7)) +  # use position_dodge to place up/down bars side by side
-    coord_flip() +  # flip coordinates so the bars are horizontal
-    facet_grid(Category ~ ., scales = "free_y", space = "free") +  # categories grouped together with free y-scales
-    scale_fill_manual(values = c("up" = "lightblue", "down" = "pink")) +  # set colors for up and down regulation 
-    labs(title = paste(top_n, "Most Significant GO Terms Across ONT Categories for", comparison_pattern),
-         x = "GO Term (ID: Description)", 
-         y = "-log10(p.adjust)", 
-         fill = "Regulation") +
-    theme_minimal() +
-    theme(strip.text.y = element_text(angle = 0))  # keep facet labels horizontal (for categories)
-}
-```
-
+  - regulation_type = which regulatory direction the plot will be visualizing (up-regulated genes vs. down-regulated genes)
 ```{r}
 plot_top_GO_terms <- function(data_file_path = "../data/arabidopsis_GO_results", 
                               comparison_pattern, 
@@ -1428,7 +1443,7 @@ plot_top_GO_terms <- function(data_file_path = "../data/arabidopsis_GO_results",
                               down_regulated_data = "down_results",
                               regulation_type = c("up", "down")) {
   
-  regulation_type <- match.arg(regulation_type)  # ensure valid input
+  regulation_type <- match.arg(regulation_type)  # ensure valid input for regulation direction 
   
   # define the GO categories 
   go_categories <- c("BP", "MF", "CC")
@@ -1491,15 +1506,6 @@ Example run using the control group comparison:
 plot_top_GO_terms(comparison_pattern = "control_ko_0_vs_wt_0", top_n = 5, regulation_type = "up")
 
 plot_top_GO_terms(comparison_pattern = "control_ko_0_vs_wt_0", top_n = 5, regulation_type = "down")
-
-```
-
-```{r}
-check |>
-  arrange(p.adjust)|>
-  slice_head(n = 7) |>
-  dplyr::select(ID, Description, p.adjust)
-
 ```
 
 # 9) DEG Visualization 
@@ -1659,7 +1665,7 @@ kegg_ora_analysis_controls <- enrichKEGG(gene = names(geneList_controls),
                                      organism     = 'ath', 
                                      pvalueCutoff = 0.05)
 
-View(kegg_ora_analysis_controls)
+# View(kegg_ora_analysis_controls)
 ```
 
 We can then visualize one of the particular pathways: 
