@@ -939,10 +939,10 @@ library(org.At.tair.db) # database used for arabidopsis
 ## Read in Individual Treatment Comparison CSV Files 
 In order to conduct GO enrichment analysis, we will need to read in our produced CSV files (from section #7) as data frames. The following chunk of code will loop through our data folder that contains the CSV files and save them as individual data frames in our global environment for further use. 
 
-The code will keep the same name for the files but change the beginning portion of "deseq2_" to "df_" and will only read in those rows with a padj < 0.05. Be sure to also replace the file path when creating the data_folder variable to wherever your CSV files were saved (will be the same path as used in the coef and ashr functions if those were utilized). 
+The code will keep the same name for the files but change the beginning portion of "deseq2_" to "df_" and will only read in those rows with a padj < 0.05. Be sure to also replace the file path when creating the data_folder variable to wherever your CSV files were saved (will be the same path as used in the coef and ashr functions if those were utilized). If you are using the full GitHub repository, then ignore that last sentence as these relative paths will work perfectly with the repository.  
 ```{r, results = 'hide'}
 # define the data folder path
-data_folder <- "../data/arabidopsis_deseq2_results/"  # change to your actual data folder path 
+data_folder <- "../data/arabidopsis_deseq2_results/"  # change to your actual data folder path unless using full GitHub repository
 
 # list all CSV files in the folder
 csv_files <- list.files(data_folder, pattern = "\\.csv$", full.names = TRUE)
@@ -1850,4 +1850,321 @@ plot_gene_counts(dds_ko, genes = c("AT1G01750.1", "AT1G02620.1"),
 # dds_ko: ko_0 vs. ko_80 
 plot_gene_counts(dds_ko, genes = c("AT1G05835.1", "AT1G07500.1"), 
                  intgroup = "treatment", filter_groups = c("80", "0"))
+```
+
+# 10) Categorizing Relevant Genes
+This section will be utilizing data provided by Dr. Sanju A. Sanjaya (the collaborator on this project) from West Virginia State University that includes A. thaliana genes that have been categorized according to one of the following areas: 
+
+  - Abiotic stress related
+  - Lipid biosynthesis related
+  - Starch biosynthesis related
+  - Metal transporters
+
+These are the particular genes of interest for this entire study as they are what will effectively help plants uptake, retain, remove, and survive heavy metal pollutants from the soil. Ideally, we will be finding the top 100/200 differential expressed/down-regulated genes from these categories. 
+
+## Abiotic Stress Related Genes
+**4/3/25**
+```{r, results = 'hide'}
+# package for reading in Excel files 
+library(readxl)
+
+# read in the provided abiotic stress related data (asrgd and asrgu are just short-hand versions of the OG file names)
+asrg_drought <- read_xls("../data/relevant_genes/abiotic_stress_related_genes_drought.xls")
+asrg_uvb <- read_xls("../data/relevant_genes/abiotic_stress_related_genes_UVB_related.xls")
+```
+
+### Cleaning Data 
+Cleaning up the read in data for abiotic_stress_related_genes_drought.xls (fixing column names, removing NA rows, etc.):
+```{r, results = 'hide'}
+# packages for cleaning data
+library(janitor)
+library(stringr)
+
+# convert column names to the row values found in row 3 (leave column 1 as is)
+drought_abiotic_stress_related <- bind_cols(
+  asrg_drought |> slice(-(1:3)) |> dplyr::select(1),  # remove the first 3 rows from column 1 using slice()
+  asrg_drought |> dplyr::select(-1) |> row_to_names(row_number = 3) # rename the other columns according to row 3
+)
+
+# convert column names to snake_case 
+drought_abiotic_stress_related <- clean_names(drought_abiotic_stress_related)
+
+# rename the column titled at_number to GeneID to facilitate joining with the df_dds_* files later on in this pipeline
+drought_abiotic_stress_related <- drought_abiotic_stress_related |>
+  rename(GeneID = at_number)
+
+# move all row values in the abiotic_stress_related_genes columns up by 1 
+drought_abiotic_stress_related <- drought_abiotic_stress_related |>
+  mutate(abiotic_stress_related_genes = lag(abiotic_stress_related_genes)) |>
+  slice(-1) # remove the first row which is fully NA 
+
+# fill the row values in column 1 with the top-most row value until it hits a row that contains NA for all columns 
+drought_abiotic_stress_related <- drought_abiotic_stress_related |>
+  fill(abiotic_stress_related_genes, .direction = "down")
+  
+# remove rows where only the first column has a value and the rest are NA
+drought_abiotic_stress_related <- drought_abiotic_stress_related |>
+  filter(rowSums(across(-1, ~ !is.na(.))) > 0)
+
+# convert the 1st column's values to snake_case by replacing both spaces and / with underscores 
+drought_abiotic_stress_related <- drought_abiotic_stress_related |>
+  mutate(abiotic_stress_related_genes = str_to_lower(abiotic_stress_related_genes), # make all values lower case 
+         abiotic_stress_related_genes = str_replace_all(abiotic_stress_related_genes, "([ /])", "_")) # replace either spaces or / with an underscore 
+
+# convert the 2nd column's values delimiters (,) to ; and remove the word "and" 
+drought_abiotic_stress_related <- drought_abiotic_stress_related |>
+  mutate(gene_name = str_replace_all(str_replace_all(gene_name, ",", ";"), "\\band\\b", ""))
+```
+
+Here is a sample of the abiotic_stress_related_genes_drought.xls all cleaned up as well as its data structure. 
+```{r, echo = FALSE}
+# sample of the cleaned data 
+head(drought_abiotic_stress_related, 5)
+
+# structure seems appropriate so we will leave it as is 
+str(drought_abiotic_stress_related)
+```
+
+Cleaning up the read in data for abiotic_stress_related_genes_UVB_related.xls (in the same way as the previous file). The code will not be included in this R Markdown file as it would be redundant to copy and paste the above code.
+```{r, echo = FALSE, results = 'hide'}
+# convert column names to the row values found in row 3 (leave column 1 as is)
+uvb_abiotic_stress_related <- bind_cols(
+  asrg_uvb |> slice(-(1:3)) |> dplyr::select(1),  # remove the first 3 rows from column 1 using slice()
+  asrg_uvb |> dplyr::select(-1) |> row_to_names(row_number = 3) # rename the other columns according to row 3
+)
+
+# convert column names to snake_case 
+uvb_abiotic_stress_related <- clean_names(uvb_abiotic_stress_related)
+
+# rename the column titled at_number to GeneID to facilitate joining with the df_dds_* files later on in this pipeline
+uvb_abiotic_stress_related <- uvb_abiotic_stress_related |>
+  rename(GeneID = at_number)
+
+# move all row values in the abiotic_stress_related_genes columns up by 1 
+uvb_abiotic_stress_related <- uvb_abiotic_stress_related |>
+  mutate(abiotic_stress_related_genes = lag(abiotic_stress_related_genes)) |>
+  slice(-1) # remove the first row which is fully NA 
+
+# fill the row values in column 1 with the top-most row value until it hits a row that contains NA for all columns 
+uvb_abiotic_stress_related <- uvb_abiotic_stress_related |>
+  fill(abiotic_stress_related_genes, .direction = "down")
+  
+# remove rows where only the first column has a value and the rest are NA
+uvb_abiotic_stress_related <- uvb_abiotic_stress_related |>
+  filter(rowSums(across(-1, ~ !is.na(.))) > 0)
+
+# convert the 1st column's values to snake_case by replacing both spaces and / with underscores 
+uvb_abiotic_stress_related <- uvb_abiotic_stress_related |>
+  mutate(abiotic_stress_related_genes = str_to_lower(abiotic_stress_related_genes), # make all values lower case 
+         abiotic_stress_related_genes = str_replace_all(abiotic_stress_related_genes, "([ /])", "_")) # replace either spaces or / with an underscore 
+
+# NOT NEEDED FOR THIS DATA FRAME
+# convert the 2nd column's values delimiters (,) to ; and remove the word "and" 
+uvb_abiotic_stress_related <- uvb_abiotic_stress_related |>
+  mutate(gene_name = str_replace_all(str_replace_all(gene_name, ",", ";"), "\\band\\b", ""))
+
+# remove rows with abiotic_stress_related_genes values of 'example' (exactly 3 rows)
+uvb_abiotic_stress_related <- uvb_abiotic_stress_related |>
+  filter(abiotic_stress_related_genes != "example")
+```
+
+Instead, all that will be shown is a sample of the cleaned abiotic_stress_related_genes_UVB_related.xls data and its data structure: 
+```{r, echo = FALSE}
+# sample of the cleaned data 
+head(uvb_abiotic_stress_related, 5)
+
+# structure seems appropriate so we will leave it as is 
+str(uvb_abiotic_stress_related)
+```
+
+### Filtering DESeq2 Results with Abiotic Stress Related Genes 
+In section #7 (Analyses for All Treatment Combinations) of this document, we used our own coef_shrinkage_contrast() and ashr_shrinkage_contrast() functions to run DESeq2 analyses on the various contrasts for our arabidopsis data and wrote to individual CSV files saved in the file path: arabidopsis_duckweed_research/data/arabidopsis_deseq2_results. In section #8 (Gene Ontology Enrichment Analysis), we read back in those CSV files to be used as data frames in GO enrichment analyses. However, when we read them in, we filtered them by padj < 0.05. The naming convention was described when reading them back into R, however, for clarity we will described them again here: 
+
+  - Example: df_dds_controls_knockout_line_vs_wild_type in the R global environment is the data frame equivalent to the CSV file
+  titled deseq2_dds_controls_knockout_line_vs_wild_type.csv. The only difference is that it was filtered to only keep those rows with
+  padj < 0.05. The same principle applies to the rest of the data frames and their CSV counter-parts. 
+  
+We will be using these same data frames (i.e. df_dds_controls_knockout_line_vs_wild_type) to produce an even more filtered version of themselves. We will take the curated uvb_abiotic_stress_related and drought_abiotic_stress_related data frames and match their at_number column to the GeneID column in the DESeq2 results. Those that match will have all of their information from the DESeq2 results moved into a new data frame along with the corresponding columns from either uvb_abiotic_stress_related or drought_abiotic_stress_related (abiotic_stress_related_genes column, gene_name, remarks, references). Remember: they are already filtered for padj < 0.05. 
+
+These will be produced as CSV files and can be investigated further to see which abiotic stress related genes were up or down regulated within each arabidopsis sample according to their log2FoldChange. 
+
+Although, we first have to remove the transcript numbers (.1, .2, etc.) from the GeneID column from the df_dds_* data frames in order to properly match our abiotic stress related genes at_number column:  
+```{r}
+# list all objects in the environment
+all_objects <- ls()
+
+# loop over each object in the environment
+for (obj in all_objects) {
+  # check if the object is a data frame and its name starts with 'df_dds_'
+  # exclude the specific object 'df_dds_controls_ko_vs_wt_entrez'
+  if (inherits(get(obj), "data.frame") && 
+      grepl("^df_dds_", obj) && 
+      obj != "df_dds_controls_ko_vs_wt_entrez") {
+    
+    # get the data frame
+    df <- get(obj)
+    
+    # apply the transformation to the first column (assuming it's a chr column)
+    df[[1]] <- sub("\\..*", "", df[[1]])  # remove the decimal point and everything after it found in the GeneID values
+    
+    # create a new name by replacing the prefix 'df_dds_' with 'relevant_'
+    new_obj_name <- sub("^df_dds_", "relevant_", obj)
+    
+    # assign the modified data frame to a new object with the new name
+    assign(new_obj_name, df)
+  }
+}
+```
+
+These data frames are named vaguely with the 'relevant_' prefix because they can then be used again later to match against the other gene categories when we receive that data (lipid biosynthesis, starch biosynthesis, metal transporters). 
+
+For now, we will match them to the abiotic stress related genes, filter the matches into new data frames with information from both, and produce new CSV files accordingly. 
+
+Below is a function called match_relevant_genes() which will merge the relevant_* data frames with the relevant gene categories (in this case, uvb_abiotic_stress_related and drought_abiotic_stress_related). However, **this requires that both data frames contain a matching column titled GeneID.** The data frames will be joined on the GeneID column. GeneID was organically added during the DESeq2 analysis when making the df_dds_* data frames (now prefixed relevant_) but the other data frames had it written in during the cleaning process (just above) in which the at_number column was renamed to GeneID to match the relevant_* data frames.
+
+The function takes 4 parameters: 
+
+  - deseq_results_df = the DESeq2 results data frame that has had its GeneID values cleaned of decimal points and
+  has been filtered to only padj < 0.05. 
+  - relevant_genes_df = the cleaned data files containing the meta data and TAIR IDs pertaining to important gene
+  categories we are interested in. 
+    - The TAIR IDs must be kept within a column also titled GeneID. 
+  - merged_df_name = your chosen name for the joined data frame containing only matching rows. 
+    - Choose a name that is obvious about the gene category and the DESeq2 contrast! 
+  - output_directory = the name of the output directory in which the CSV files will be written to.
+    - The default file path within the function itself matches to the existing directories associated with this entire
+    GitHub repository. It can be changed directly within the function. 
+    
+The function will produce both a CSV file and a data frame so we can use the information both in R Studio or not without the hassle of having to read the data back in. If there are no matches, it will simply spit out a message stating so and will not make any uncessary files or data frames. 
+```{r}
+match_relevant_genes <- function(deseq_results_df, relevant_genes_df, merged_df_name, output_directory) {
+  # default base directory/file path (can be changed as needed)
+  base_directory <- "../data/"
+  
+  # combine the base directory with the provided output_directory name 
+  full_directory <- file.path(base_directory, output_directory)
+  
+  # merge the two data frames by 'GeneID' to keep only the matching rows
+  merged_df <- merge(deseq_results_df, relevant_genes_df, by = "GeneID")
+  
+  # if there are no matches, print the following message and exit the function 
+  if (nrow(merged_df) == 0) {
+    message("No matching GeneID values found! No CSV file or data frame was created.")
+    return(NULL)
+  }
+  
+  # rceate the specified output directory (if it doesn't already exist; if it does exist, it will use that one)
+  dir.create(full_directory, showWarnings = FALSE, recursive = TRUE)
+  
+  # save the merged data frame to a CSV file 
+  write.csv(merged_df, file.path(full_directory, paste0(merged_df_name, ".csv")), row.names = FALSE)
+  
+  # assign the merged data frame to an object with the same name as merged_df_name (for use within R Studio)
+  assign(merged_df_name, merged_df, envir = .GlobalEnv)
+  
+  # return the merged data frame (for immediate viewing of data)
+  return(merged_df)
+}
+```
+
+Drought abiotic stress-related genes: 
+```{r, echo = FALSE, results = 'hide'}
+# Controls: KO_0 vs. WT_0 
+match_relevant_genes(relevant_controls_knockout_line_vs_wild_type, drought_abiotic_stress_related, "drought_abiotic_controls_ko_vs_wt", "drought_abiotic_stress_related_genes")
+
+
+
+
+# Treatment: KO_20 vs. WT_20
+match_relevant_genes(relevant_treatment_ko_20_vs_wt_20, drought_abiotic_stress_related, "drought_abiotic_treatment_ko_20_vs_wt_20", "drought_abiotic_stress_related_genes")
+
+# Treatment: KO_40 vs. WT_40
+match_relevant_genes(relevant_treatment_ko_40_vs_wt_40, drought_abiotic_stress_related, "drought_abiotic_treatment_ko_40_vs_wt_40", "drought_abiotic_stress_related_genes")
+
+# Treatment: KO_60 vs. WT_60
+match_relevant_genes(relevant_treatment_ko_60_vs_wt_60, drought_abiotic_stress_related, "drought_abiotic_treatment_ko_60_vs_wt_60", "drought_abiotic_stress_related_genes")
+
+# Treatment: KO_80 vs. WT_80
+match_relevant_genes(relevant_treatment_ko_80_vs_wt_80, drought_abiotic_stress_related, "drought_abiotic_treatment_ko_80_vs_wt_80", "drought_abiotic_stress_related_genes")
+
+
+
+
+# Wild-Type: WT_20 vs. WT_0
+match_relevant_genes(relevant_wt_20_vs_0, drought_abiotic_stress_related, "drought_abiotic_wt_20_vs_0", "drought_abiotic_stress_related_genes")
+
+# Wild-Type: WT_40 vs. WT_0
+match_relevant_genes(relevant_wt_40_vs_0, drought_abiotic_stress_related, "drought_abiotic_wt_40_vs_0", "drought_abiotic_stress_related_genes")
+
+# Wild-Type: WT_60 vs. WT_0
+match_relevant_genes(relevant_wt_60_vs_0, drought_abiotic_stress_related, "drought_abiotic_wt_60_vs_0", "drought_abiotic_stress_related_genes")
+
+# Wild-Type: WT_80 vs. WT_0
+match_relevant_genes(relevant_wt_80_vs_0, drought_abiotic_stress_related, "drought_abiotic_wt_80_vs_0", "drought_abiotic_stress_related_genes")
+
+
+
+
+# Knockout-Line: KO_20 vs. KO_0
+match_relevant_genes(relevant_ko_20_vs_0, drought_abiotic_stress_related, "drought_abiotic_ko_20_vs_0", "drought_abiotic_stress_related_genes")
+
+# Knockout-Line: KO_40 vs. KO_0
+match_relevant_genes(relevant_ko_40_vs_0, drought_abiotic_stress_related, "drought_abiotic_ko_40_vs_0", "drought_abiotic_stress_related_genes")
+
+# Knockout-Line: KO_60 vs. KO_0
+match_relevant_genes(relevant_ko_60_vs_0, drought_abiotic_stress_related, "drought_abiotic_ko_60_vs_0", "drought_abiotic_stress_related_genes")
+
+# Knockout-Line: KO_80 vs. KO_0
+match_relevant_genes(relevant_ko_80_vs_0, drought_abiotic_stress_related, "drought_abiotic_ko_80_vs_0", "drought_abiotic_stress_related_genes")
+```
+
+UV-B abiotic stress-related genes: 
+```{r, echo = FALSE, results = 'hide'}
+# Controls: KO_0 vs. WT_0 
+match_relevant_genes(relevant_controls_knockout_line_vs_wild_type, uvb_abiotic_stress_related, "uvb_abiotic_controls_ko_vs_wt", "uvb_abiotic_stress_related_genes")
+
+
+
+
+# Treatment: KO_20 vs. WT_20
+match_relevant_genes(relevant_treatment_ko_20_vs_wt_20, uvb_abiotic_stress_related, "uvb_abiotic_treatment_ko_20_vs_wt_20", "uvb_abiotic_stress_related_genes")
+
+# Treatment: KO_40 vs. WT_40
+match_relevant_genes(relevant_treatment_ko_40_vs_wt_40, uvb_abiotic_stress_related, "uvb_abiotic_treatment_ko_40_vs_wt_40", "uvb_abiotic_stress_related_genes")
+
+# Treatment: KO_60 vs. WT_60
+match_relevant_genes(relevant_treatment_ko_60_vs_wt_60, uvb_abiotic_stress_related, "uvb_abiotic_treatment_ko_60_vs_wt_60", "uvb_abiotic_stress_related_genes")
+
+# Treatment: KO_80 vs. WT_80
+match_relevant_genes(relevant_treatment_ko_80_vs_wt_80, uvb_abiotic_stress_related, "uvb_abiotic_treatment_ko_80_vs_wt_80", "uvb_abiotic_stress_related_genes")
+
+
+
+
+# Wild-Type: WT_20 vs. WT_0
+match_relevant_genes(relevant_wt_20_vs_0, uvb_abiotic_stress_related, "uvb_abiotic_wt_20_vs_0", "uvb_abiotic_stress_related_genes")
+
+# Wild-Type: WT_40 vs. WT_0
+match_relevant_genes(relevant_wt_40_vs_0, uvb_abiotic_stress_related, "uvb_abiotic_wt_40_vs_0", "uvb_abiotic_stress_related_genes")
+
+# Wild-Type: WT_60 vs. WT_0
+match_relevant_genes(relevant_wt_60_vs_0, uvb_abiotic_stress_related, "uvb_abiotic_wt_60_vs_0", "uvb_abiotic_stress_related_genes")
+
+# Wild-Type: WT_80 vs. WT_0
+match_relevant_genes(relevant_wt_80_vs_0, uvb_abiotic_stress_related, "uvb_abiotic_wt_80_vs_0", "uvb_abiotic_stress_related_genes")
+
+
+
+
+# Knockout-Line: KO_20 vs. KO_0
+match_relevant_genes(relevant_ko_20_vs_0, uvb_abiotic_stress_related, "uvb_abiotic_ko_20_vs_0", "uvb_abiotic_stress_related_genes")
+
+# Knockout-Line: KO_40 vs. KO_0
+match_relevant_genes(relevant_ko_40_vs_0, uvb_abiotic_stress_related, "uvb_abiotic_ko_40_vs_0", "uvb_abiotic_stress_related_genes")
+
+# Knockout-Line: KO_60 vs. KO_0
+match_relevant_genes(relevant_ko_60_vs_0, uvb_abiotic_stress_related, "uvb_abiotic_ko_60_vs_0", "uvb_abiotic_stress_related_genes")
+
+# Knockout-Line: KO_80 vs. KO_0
+match_relevant_genes(relevant_ko_80_vs_0, uvb_abiotic_stress_related, "uvb_abiotic_ko_80_vs_0", "uvb_abiotic_stress_related_genes")
 ```
