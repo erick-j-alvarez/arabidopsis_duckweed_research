@@ -1873,7 +1873,7 @@ asrg_drought <- read_xls("../data/relevant_genes/abiotic_stress_related_genes_dr
 asrg_uvb <- read_xls("../data/relevant_genes/abiotic_stress_related_genes_UVB_related.xls")
 ```
 
-### Cleaning Data 
+### Cleaning Data
 Cleaning up the read in data for abiotic_stress_related_genes_drought.xls (fixing column names, removing NA rows, etc.):
 ```{r, results = 'hide'}
 # packages for cleaning data
@@ -1914,6 +1914,14 @@ drought_abiotic_stress_related <- drought_abiotic_stress_related |>
 # convert the 2nd column's values delimiters (,) to ; and remove the word "and" 
 drought_abiotic_stress_related <- drought_abiotic_stress_related |>
   mutate(gene_name = str_replace_all(str_replace_all(gene_name, ",", ";"), "\\band\\b", ""))
+
+# transform any instances of / in the gene_name column to ;
+drought_abiotic_stress_related <- drought_abiotic_stress_related |>
+  mutate(gene_name = gsub("/", ";", gene_name))
+
+# remove any spaces around the delimiter ; in the gene_name column 
+drought_abiotic_stress_related <- drought_abiotic_stress_related |>
+  mutate(gene_name = gsub("\\s*;\\s*", ";", gene_name))
 ```
 
 Here is a sample of the abiotic_stress_related_genes_drought.xls all cleaned up as well as its data structure. 
@@ -1963,9 +1971,20 @@ uvb_abiotic_stress_related <- uvb_abiotic_stress_related |>
 uvb_abiotic_stress_related <- uvb_abiotic_stress_related |>
   mutate(gene_name = str_replace_all(str_replace_all(gene_name, ",", ";"), "\\band\\b", ""))
 
-# remove rows with abiotic_stress_related_genes values of 'example' (exactly 3 rows)
+# remove rows with abiotic_stress_related_genes values of 'example' (exactly 3 rows); those 'example' rows are actually drought_stressors as seen in drought_abiotic_stress_related
 uvb_abiotic_stress_related <- uvb_abiotic_stress_related |>
   filter(abiotic_stress_related_genes != "example")
+
+# transform any instances of / in the gene_name column to ;
+uvb_abiotic_stress_related <- uvb_abiotic_stress_related |>
+  mutate(gene_name = gsub("/", ";", gene_name))
+
+# remove any rows with a missing GeneID (originally, at_number) value
+# CONSIDER DOING THIS BUT NOT NECESSARY AS THE MERGING LATER ON WILL NOT FIND A GeneID TO MERGE WITH ANYWAY 
+
+# remove any spaces around the delimiter ; in the gene_name column 
+uvb_abiotic_stress_related <- uvb_abiotic_stress_related |>
+  mutate(gene_name = gsub("\\s*;\\s*", ";", gene_name))
 ```
 
 Instead, all that will be shown is a sample of the cleaned abiotic_stress_related_genes_UVB_related.xls data and its data structure: 
@@ -2053,7 +2072,7 @@ match_relevant_genes <- function(deseq_results_df, relevant_genes_df, merged_df_
     return(NULL)
   }
   
-  # rceate the specified output directory (if it doesn't already exist; if it does exist, it will use that one)
+  # create the specified output directory (if it doesn't already exist; if it does exist, it will use that one)
   dir.create(full_directory, showWarnings = FALSE, recursive = TRUE)
   
   # save the merged data frame to a CSV file 
@@ -2167,4 +2186,771 @@ match_relevant_genes(relevant_ko_60_vs_0, uvb_abiotic_stress_related, "uvb_abiot
 
 # Knockout-Line: KO_80 vs. KO_0
 match_relevant_genes(relevant_ko_80_vs_0, uvb_abiotic_stress_related, "uvb_abiotic_ko_80_vs_0", "uvb_abiotic_stress_related_genes")
+```
+
+### Finding Unique GeneID for Significantly Expressed Abiotic Stress Related Genes
+**4/15/25**
+
+We now want to compile the GeneID, gene_name, and abiotic_stress_related_gene columns from each of the drought_abiotic* and uvb_abiotic* data frames containing DESeq2 information (i.e. log2FoldChange, padj, etc.). We will combine all of these into a single abiotic stress related data frame that will be filtered for unique GeneIDs and than merged with the normalized_counts data frame in order to produce a comprehensive heat map of the significantly expressed genes associated with abiotic stress. 
+
+  - Remember! We are combining both the genes specific to drought abiotic stress and UV-B abiotic stress. 
+```{r}
+# 1) list all objects starting with 'drought_abiotic' and 'uvb_abiotic'
+all_abiotic_stress_df_names <- c(
+  ls(pattern = "^drought_abiotic"),
+  ls(pattern = "^uvb_abiotic")
+  )
+
+# 2) exclude both 'drought_abiotic_stress_related' and 'uvb_abiotic_stress_related' data frames (as they include more than just the significantly expressed genes)
+all_abiotic_stress_df_names <- setdiff(all_abiotic_stress_df_names, c("drought_abiotic_stress_related", "uvb_abiotic_stress_related"))
+
+# 3) load the matching data frames into a list
+all_abiotic_stress_df_list <- mget(all_abiotic_stress_df_names)
+
+# 4) bind them into one data frame
+all_abiotic_stress_genes_df <- bind_rows(all_abiotic_stress_df_list)
+```
+
+Select only the following columns: 
+
+  - GeneID
+  - gene_name 
+  - abiotic_stress_related_genes 
+  
+Collapse the rows to only contain unique rows.
+```{r}
+# select only specific columns and unique rows 
+all_abiotic_stress_genes_df <- all_abiotic_stress_genes_df |>
+  dplyr::select(GeneID, gene_name, abiotic_stress_related_genes) |>
+  dplyr::distinct()
+```
+
+THE NEXT 2 CHUNKS OF R CODE ARE PREPARING THE normalized_counts DATA SO THAT THEY HAVE AVERAGED TRIPLICATE SAMPLE READ COUNTS AND NO LONGER HAVE TRAILING DECIMALS POINTS (TRANSCRIPTS) IN THE GeneID COLUMN VALUES.
+
+**(1)**
+Next, we need to remove the trailing decimal points from the rownames containing the GeneIDs found in the normalized_counts data frame.
+```{r}
+# make new copy of normalized_counts (note: these are matrices, not data frames)
+st35_normalized_counts <- normalized_counts
+
+# convert the matrix into a data frame
+st35_normalized_counts <- as.data.frame(st35_normalized_counts)
+
+# convert rownames to a column titled GeneID
+st35_normalized_counts <- st35_normalized_counts |>
+  rownames_to_column("GeneID")
+
+# remove trailing zeroes from the GeneIDs 
+st35_normalized_counts <- st35_normalized_counts |>
+  mutate(GeneID = gsub("\\..*", "", GeneID))
+```
+
+**(2)**
+We need to average the read count columns in the st35_normalized_counts per triplicate (so any visualization we produce looks cleaner with less columns):
+```{r}
+# 1) separate GeneID (column #1) from the read count columns 
+meta_cols <- st35_normalized_counts[, 1, drop = FALSE]  # keep GeneID as a data frame
+expr_cols <- st35_normalized_counts[, -1]  # remove the first GeneID column
+
+# 2) average every 3 columns (each set of triplicates)
+n_sets <- ncol(expr_cols) / 3 
+
+averaged_expr <- purrr::map_dfc(1:n_sets, function(i) {
+  start_col <- (i - 1) * 3 + 1
+  cols_to_avg <- expr_cols[, start_col:(start_col + 2)]
+  
+  averaged <- rowMeans(cols_to_avg, na.rm = TRUE)
+  
+  # create a name for the averaged column (based on the first column in the triplet)
+  sample_name <- colnames(expr_cols)[start_col]
+  sample_group_name <- sub("_[0-9]$", "", sample_name)  # remove trailing "_1", "_2", "_3"
+  
+  tibble::tibble(!!sample_group_name := averaged)
+})
+
+# 3) combine GeneID with the averaged expression data
+averaged_st35_normalized_counts <- bind_cols(meta_cols, averaged_expr)
+```
+
+Merge the data frame with the unique abiotic stress related genes to averaged_st35_normalized_counts.
+```{r}
+# merge according to GeneID
+normalized_abiotic_stress_avg_read_counts <- merge(averaged_st35_normalized_counts, all_abiotic_stress_genes_df, by = "GeneID")
+
+# re-order the columns
+normalized_abiotic_stress_avg_read_counts <- normalized_abiotic_stress_avg_read_counts |>
+  dplyr::select(GeneID, gene_name, abiotic_stress_related_genes, everything())
+
+# order the columns alphabetically by the abiotic_stress_related_genes column 
+normalized_abiotic_stress_avg_read_counts <- normalized_abiotic_stress_avg_read_counts |>
+  arrange(abiotic_stress_related_genes)
+```
+
+### GOI_heatmap() Function 
+**4/21/25**
+
+The following function was made to dynamically produce a heatmap associated with the significant gene categories we wish to investigate across the different arabidopsis samples (GOI means 'genes of interest'). It requires an already prepared data frame that contains a column containing TAIR IDs, a column with associated gene names, a column with specific pathways or gene functions, and the averaged sample read counts (this layout is followed by normalized_abiotic_stress_avg_read_counts data frame as seen directly above). 
+
+The function's parameters are as follows: 
+
+  - df = specific data frame (that follows the layout described above)
+  - gene_id_col = a column that contains TAIR IDs
+    - default is "GeneID"
+  - gene_name_col = a column that contains the gene names associated with the TAIR IDs
+    - default is "gene_name"
+  - group_col = a column that contains some sort of descriptor for the gene effect/response/pathway
+  - plot_title = the desired name of the plot and the output file name 
+  - file_format = the desired output file format 
+    - default is ".pdf"
+  - width = width of the heatmap output file 
+    - default is 10 
+  - height = height of the heatmap output file 
+    - default is 14 
+  - dpi = dpi of the heatmap output file 
+    - default is 600
+    
+The output file path is fixed but can be adjusted by adjusting the function's body code directly. Same with the dimensions of the output file. 
+```{r}
+# function for dynamically producing a heatmap for significant genes of interest (GOI)
+GOI_heatmap <- function(df, 
+                        gene_id_col = "GeneID", 
+                        gene_name_col = "gene_name", 
+                        group_col, 
+                        plot_title, 
+                        file_format = "pdf",
+                        width = 10,
+                        height = 14,
+                        dpi = 600) {
+  
+  # dynamically access columns (allows for modularity in choosing desired column names)
+  gene_id_sym <- sym(gene_id_col)
+  gene_name_sym <- sym(gene_name_col)
+  group_col_sym <- sym(group_col)
+  
+  # 1) create GeneLabel column (gene_id_col | gene_name_col) and set factor levels by group
+  df <- df |>
+    mutate(GeneLabel = paste(!!gene_id_sym, !!gene_name_sym, sep = " | ")) |>
+    arrange(!!group_col_sym, GeneLabel) |>
+    mutate(GeneLabel = factor(GeneLabel, levels = unique(GeneLabel))) |>
+    dplyr::select(GeneLabel, !!group_col_sym, everything(), -!!gene_id_sym, -!!gene_name_sym)
+  
+  # 2) pivot to long format
+  df_long <- df |>
+    pivot_longer(
+      cols = -c(GeneLabel, !!group_col_sym),
+      names_to = "Sample",
+      values_to = "Expression"
+    )
+  
+  # 3) log-transform
+  df_long <- df_long |>
+    mutate(Expression_log = log1p(Expression))
+  
+  # 4) create heatmap
+  heatmap_plot <- ggplot(df_long, aes(x = Sample, y = GeneLabel, fill = Expression_log)) +
+    geom_tile() +
+    scale_fill_viridis_c(option = "magma") +  
+    facet_grid(rows = vars(!!group_col_sym), scales = "free_y", space = "free_y") +
+    theme_minimal() +
+    theme(
+      strip.text.y = element_text(angle = 0, face = "bold"),
+      axis.text.x = element_text(angle = 55, hjust = 1),
+      axis.text.y = element_text(size = 6),
+      panel.spacing.y = unit(0.5, "lines")
+    ) +
+    labs(
+      title = plot_title,
+      x = "Sample (Averaged Triplicate)",
+      y = "Gene (ID | Name)",
+      fill = "log(Expression + 1)"
+    )
+  
+  # set fixed file path
+  save_dir <- "../data/sig_genes_of_interest_heatmaps"
+  
+  # create full file path 
+  file_name <- paste0(str_to_lower(str_replace_all(plot_title, "\\s+", "_")), ".", file_format)
+  full_path <- file.path(save_dir, file_name)
+  
+  # save plot 
+  ggsave(filename = full_path, plot = heatmap_plot, width = width, height = height, dpi = dpi, device = file_format)
+  
+  # view heatmap in R Studio after saving it 
+  return(heatmap_plot)
+}
+```
+
+### Heatmap for Abiotic Stress Genes 
+**4/21/25** 
+
+Utilizing the GOI_heatmap() function to produce a heatmap using the genes associated with abiotic stress across our samples: 
+```{r}
+abiotic_stress_gene_expression_heatmap <- GOI_heatmap(
+  df = normalized_abiotic_stress_avg_read_counts,
+  gene_id_col = "GeneID", 
+  gene_name_col = "gene_name",
+  group_col = "abiotic_stress_related_genes",
+  plot_title = "Abiotic Stress Gene Expression Heatmap",
+  file_format = "pdf"
+)
+
+# view heatmap 
+abiotic_stress_gene_expression_heatmap
+```
+
+## Lipid Biosynthesis Related
+**4/21/25**
+```{r, results = 'hide'}
+# reading in data 
+cc_lipid_genes <- read_xls("../data/relevant_genes/color_coded_lipid_genes.xls")
+```
+
+### Cleaning Data 
+Cleaning up the read in data for color_coded_lipid_genes.xls (fixing column names, removing NA rows, etc.):
+```{r}
+# convert column names to snake_case 
+lipid_biosynthesis_related <- clean_names(cc_lipid_genes)
+
+# fix column names (to be more concise)
+lipid_biosynthesis_related <- lipid_biosynthesis_related |>
+  rename(gene_pathway = pathway, # will act as our group_col 
+         protein_family_common = protein_family_name_common,
+         protein_family_common_abrev = protein_family_abbreviation_common,
+         protein_family_isoform = protein_family_name_isoform_gene_specific_info,
+         protein_gene_abrev_isoform = protein_gene_abbreviation_isoform_gene_specific, # will act as our gene_name 
+         GeneID = gene_locus, # very important to name a column GeneID 
+         expression_id_eff = expression_id_for_evidence_for_function,
+         mutant_names = name_of_mutants,
+         remarks = comments_changes_suggested_revisions_corrections_etc_used_combined_notes_black_info_has_been_combined_added_sort_on_locus_id_for_clarification,
+         ) 
+
+# merge ref* columns to ref*_url columns 
+lipid_biosynthesis_related <- lipid_biosynthesis_related |>
+  mutate(ref_1 = str_c(ref1, ref1_url, sep = ";"),
+         ref_2 = str_c(rer2, ref2_url, sep = ";"),
+         ref_3 = str_c(ref3, ref3_url, sep = ";")) |>
+  dplyr::select(-ref1, -ref1_url, -rer2, -ref2_url, -ref3, -ref3_url)
+
+# clean the GeneID column of all inconsistencies
+lipid_biosynthesis_related <- lipid_biosynthesis_related |>
+  mutate(GeneID = toupper(GeneID),
+         GeneID = str_remove(GeneID, "OR RELATED GENES\\?"),
+         GeneID = na_if(GeneID, "?"))
+
+# clean the gene_pathway column values 
+lipid_biosynthesis_related <- lipid_biosynthesis_related |>
+  mutate(gene_pathway = str_to_title(gene_pathway),
+         gene_pathway = str_replace_all(gene_pathway, "\\bOppp\\b", "OPPP"),
+         gene_pathway = str_replace_all(gene_pathway, "\\bAnd\\b", "&"),
+         gene_pathway = str_replace_all(gene_pathway, "\\bTag\\b", "TAG"),
+         gene_pathway = str_replace_all(gene_pathway, "\\bB-\\b", "b-"))
+
+# re-order the data frame
+lipid_biosynthesis_related <- lipid_biosynthesis_related |> 
+  dplyr::select(GeneID, protein_gene_abrev_isoform, gene_pathway, everything())
+
+# replace instances of , and / and "or" from the protein_gene_abrev_isoform column; also removes trailing ;
+lipid_biosynthesis_related <- lipid_biosynthesis_related |>
+  mutate(protein_gene_abrev_isoform = str_replace_all(
+    str_replace_all(
+      str_replace_all(protein_gene_abrev_isoform, "\\s*[,/]|\\s*\\bor\\b\\s*", ";"),
+      "\\s*;\\s*", ";"), ";\\s*$", ""))
+```
+Many of the columns still require tidying up but the GeneID, protein_gene_abrev_isoform, and gene_pathway columns are what we care about the most at the moment so that is what we primarily focused on for now! 
+
+### Filtering DESeq2 Results with Lipid Biosythesis Related Genes 
+We will now merge our freshly cleaned lipid_biosynthesis_related data frame to the relevant_* dds data frames that were made in section 10 (Filtering DESeq2 Results with Abiotic Stress Related Genes) using our match_relevant_genes() function (made in the same section). Our merged files will be saved both as data frames in the R Studio environment and as CSV files in ../data/lipid_biosynthesis_related_genes. A different data frame/CSV file will be produced per sample contrast. 
+
+  - Reminder: **requires a GeneID column in both data frames to work!**
+    - will be merged/joined on the GeneID column 
+  - CSV files will be used to produce Venn Diagrams of overlapping genes across samples (just as it was with the abiotic stress related genes)
+
+A reminder that the match_relevant_genes() function contains arguments as follows: 
+  - match_relevant_genes <- function(deseq_results_df, relevant_genes_df, merged_df_name, output_directory) 
+```{r, echo = FALSE, results = 'hide'}
+# Controls: KO_0 vs. WT_0 
+match_relevant_genes(relevant_controls_knockout_line_vs_wild_type, lipid_biosynthesis_related, "lipid_biosynthesis_controls_ko_vs_wt", "lipid_biosynthesis_related_genes")
+
+
+
+
+# Treatment: KO_20 vs. WT_20
+match_relevant_genes(relevant_treatment_ko_20_vs_wt_20, lipid_biosynthesis_related, "lipid_biosynthesis_treatment_ko_20_vs_wt_20", "lipid_biosynthesis_related_genes")
+
+# Treatment: KO_40 vs. WT_40
+match_relevant_genes(relevant_treatment_ko_40_vs_wt_40, lipid_biosynthesis_related, "lipid_biosynthesis_treatment_ko_40_vs_wt_40", "lipid_biosynthesis_related_genes")
+
+# Treatment: KO_60 vs. WT_60
+match_relevant_genes(relevant_treatment_ko_60_vs_wt_60, lipid_biosynthesis_related, "lipid_biosynthesis_treatment_ko_60_vs_wt_60", "lipid_biosynthesis_related_genes")
+
+# Treatment: KO_80 vs. WT_80
+match_relevant_genes(relevant_treatment_ko_80_vs_wt_80, lipid_biosynthesis_related, "lipid_biosynthesis_treatment_ko_80_vs_wt_80", "lipid_biosynthesis_related_genes")
+
+
+
+
+# Wild-Type: WT_20 vs. WT_0
+match_relevant_genes(relevant_wt_20_vs_0, lipid_biosynthesis_related, "lipid_biosynthesis_wt_20_vs_0", "lipid_biosynthesis_related_genes")
+
+# Wild-Type: WT_40 vs. WT_0
+match_relevant_genes(relevant_wt_40_vs_0, lipid_biosynthesis_related, "lipid_biosynthesis_wt_40_vs_0", "lipid_biosynthesis_related_genes")
+
+# Wild-Type: WT_60 vs. WT_0
+match_relevant_genes(relevant_wt_60_vs_0, lipid_biosynthesis_related, "lipid_biosynthesis_wt_60_vs_0", "lipid_biosynthesis_related_genes")
+
+# Wild-Type: WT_80 vs. WT_0
+match_relevant_genes(relevant_wt_80_vs_0, lipid_biosynthesis_related, "lipid_biosynthesis_wt_80_vs_0", "lipid_biosynthesis_related_genes")
+
+
+
+
+# Knockout-Line: KO_20 vs. KO_0
+match_relevant_genes(relevant_ko_20_vs_0, lipid_biosynthesis_related, "lipid_biosynthesis_ko_20_vs_0", "lipid_biosynthesis_related_genes")
+
+# Knockout-Line: KO_40 vs. KO_0
+match_relevant_genes(relevant_ko_40_vs_0, lipid_biosynthesis_related, "lipid_biosynthesis_ko_40_vs_0", "lipid_biosynthesis_related_genes")
+
+# Knockout-Line: KO_60 vs. KO_0
+match_relevant_genes(relevant_ko_60_vs_0, lipid_biosynthesis_related, "lipid_biosynthesis_ko_60_vs_0", "lipid_biosynthesis_related_genes")
+
+# Knockout-Line: KO_80 vs. KO_0
+match_relevant_genes(relevant_ko_80_vs_0, lipid_biosynthesis_related, "lipid_biosynthesis_ko_80_vs_0", "lipid_biosynthesis_related_genes")
+```
+
+### Finding Unique GeneID for Significantly Expressed Lipid Biosynthesis Related Genes
+**4/22/25**
+
+We now want to compile the GeneID, protein_gene_abrev_isoform (so I believe as it seems the most appropriate/similar for gene_name), and gene_pathway columns from the lipid_biosynthesis_* data frames containing DESeq2 information (i.e. log2FoldChange, padj, etc.). We will combine all of these into a single lipid biosynthesis related data frame that will be filtered for unique GeneIDs and than merged with the averaged_st35_normalized_counts data frame (made in section 10 [Finding Unique GeneID for Significantly Expressed Abiotic Stress Related Genes]) in order to produce a comprehensive heat map of the significantly expressed genes associated with lipid biosynthesis. 
+
+  - the same way we did for abiotic stress related genes!
+```{r}
+# 1) list all objects starting with 'lipid_biosynthesis'
+all_lipid_biosyn_df_names <- ls(pattern = "^lipid_biosynthesis")
+
+# 2) exclude the 'lipid_biosynthesis_related' data frame (as it includes more than just the significantly expressed genes)
+all_lipid_biosyn_df_names <- setdiff(all_lipid_biosyn_df_names, "lipid_biosynthesis_related")
+
+# 3) load the matching data frames into a list
+all_lipid_biosyn_df_list <- mget(all_lipid_biosyn_df_names)
+
+# 4) bind them into one data frame
+all_lipid_biosyn_genes_df <- bind_rows(all_lipid_biosyn_df_list)
+```
+
+Select only the following columns: 
+
+  - GeneID
+  - protein_gene_abrev_isoform 
+  - gene_pathway 
+  
+Collapse the rows to only contain unique rows.
+```{r}
+# select only specific columns and unique rows and condense to only unique rows 
+all_lipid_biosyn_genes_df <- all_lipid_biosyn_genes_df |>
+  dplyr::select(GeneID, protein_gene_abrev_isoform, gene_pathway) |>
+  dplyr::distinct()
+```
+
+Merge the data frame with the unique lipid biosynthesis related genes to averaged_st35_normalized_counts.
+```{r}
+# merge according to GeneID
+normalized_lipid_biosyn_avg_read_counts <- merge(averaged_st35_normalized_counts, all_lipid_biosyn_genes_df, by = "GeneID")
+
+# re-order the columns
+normalized_lipid_biosyn_avg_read_counts <- normalized_lipid_biosyn_avg_read_counts |>
+  dplyr::select(GeneID, protein_gene_abrev_isoform, gene_pathway, everything())
+
+# order the columns alphabetically by the gene_pathway column 
+normalized_lipid_biosyn_avg_read_counts <- normalized_lipid_biosyn_avg_read_counts |>
+  arrange(gene_pathway)
+```
+
+### Heatmap for Lipid Biosynthesis Genes 
+Utilizing the GOI_heatmap() function to produce a heatmap using the genes associated with lipid biosynthesis across our samples: 
+```{r}
+lipid_biosynthesis_gene_expression_heatmap <- GOI_heatmap(
+  df = normalized_lipid_biosyn_avg_read_counts,
+  gene_id_col = "GeneID", 
+  gene_name_col = "protein_gene_abrev_isoform",
+  group_col = "gene_pathway",
+  plot_title = "Lipid Biosynthesis Gene Expression Heatmap",
+  file_format = "pdf",
+  width = 10,
+  height = 49,
+  dpi = 600
+)
+
+# view heatmap 
+lipid_biosynthesis_gene_expression_heatmap
+```
+
+## Starch Biosynthesis Related 
+**4/22/25**
+```{r, results = 'hide'}
+cc_starch_genes <- read_xls("../data/relevant_genes/color_coded_starch_synthesis_and_degradation_genes_07-31-2020.xls")
+```
+
+### Cleaning Data 
+Cleaning up the read in data for color_coded_starch_synthesis_and_degradation_genes_07-31-2020.xls (fixing column names, removing NA rows, etc.):
+```{r}
+# rename (manually) the column names (there are only 3 so why not)
+starch_biosynthesis_related <- cc_starch_genes |>
+  rename(enzyme_name = `Starch synthesis and degradation enzymes and their genes`,
+         gene_name = ...2,
+         GeneID = ...3)
+
+# remove third row of data 
+starch_biosynthesis_related <- starch_biosynthesis_related[-3, ]
+
+# add new column titled 'gene_pathway' 
+starch_biosynthesis_related <- starch_biosynthesis_related |>
+  mutate(gene_pathway = enzyme_name)
+
+# add gene_pathway column and fill with the terms starting each new block of the enzyme_name column 
+starch_biosynthesis_related <- starch_biosynthesis_related |>
+  mutate(
+    gene_pathway = case_when(
+      row_number() >= 5 & row_number() <= 25 ~ 'Starch Synthesis',
+      row_number() >= 28 & row_number() <= 61 ~ 'Starch Degradation',
+      row_number() >= 64 & row_number() <= 67 ~ 'Sugar Transporter',
+      TRUE ~ gene_pathway # keep the rest 
+    )
+  )
+
+# remove rows where all values are NA 
+starch_biosynthesis_related <- starch_biosynthesis_related |>
+  filter(!if_all(everything(), is.na))
+
+# remove rows 1, 23, 58 
+starch_biosynthesis_related <- starch_biosynthesis_related |>
+  slice(-c(1,23,58)) 
+
+# capitalize the GeneID column values 
+starch_biosynthesis_related <- starch_biosynthesis_related |>
+  mutate(GeneID = toupper(GeneID))
+
+# re-order the columns 
+starch_biosynthesis_related <- starch_biosynthesis_related |>
+  dplyr::select(GeneID, gene_name, gene_pathway, enzyme_name)
+```
+
+### Filtering DESeq2 Results with Starch Biosythesis Related Genes 
+Same process as with the abiotic stress related and lipid biosynthesis related genes.
+```{r, echo = FALSE, results = 'hide'}
+# Controls: KO_0 vs. WT_0 
+match_relevant_genes(relevant_controls_knockout_line_vs_wild_type, starch_biosynthesis_related, "starch_biosynthesis_controls_ko_vs_wt", "starch_biosynthesis_related_genes")
+
+
+
+
+# Treatment: KO_20 vs. WT_20
+match_relevant_genes(relevant_treatment_ko_20_vs_wt_20, starch_biosynthesis_related, "starch_biosynthesis_treatment_ko_20_vs_wt_20", "starch_biosynthesis_related_genes")
+
+# Treatment: KO_40 vs. WT_40
+match_relevant_genes(relevant_treatment_ko_40_vs_wt_40, starch_biosynthesis_related, "starch_biosynthesis_treatment_ko_40_vs_wt_40", "starch_biosynthesis_related_genes")
+
+# Treatment: KO_60 vs. WT_60
+match_relevant_genes(relevant_treatment_ko_60_vs_wt_60, starch_biosynthesis_related, "starch_biosynthesis_treatment_ko_60_vs_wt_60", "starch_biosynthesis_related_genes")
+
+# Treatment: KO_80 vs. WT_80
+match_relevant_genes(relevant_treatment_ko_80_vs_wt_80, starch_biosynthesis_related, "starch_biosynthesis_treatment_ko_80_vs_wt_80", "starch_biosynthesis_related_genes")
+
+
+
+
+# Wild-Type: WT_20 vs. WT_0
+match_relevant_genes(relevant_wt_20_vs_0, starch_biosynthesis_related, "starch_biosynthesis_wt_20_vs_0", "starch_biosynthesis_related_genes")
+
+# Wild-Type: WT_40 vs. WT_0
+match_relevant_genes(relevant_wt_40_vs_0, starch_biosynthesis_related, "starch_biosynthesis_wt_40_vs_0", "starch_biosynthesis_related_genes")
+
+# Wild-Type: WT_60 vs. WT_0
+match_relevant_genes(relevant_wt_60_vs_0, starch_biosynthesis_related, "starch_biosynthesis_wt_60_vs_0", "starch_biosynthesis_related_genes")
+
+# Wild-Type: WT_80 vs. WT_0
+match_relevant_genes(relevant_wt_80_vs_0, starch_biosynthesis_related, "starch_biosynthesis_wt_80_vs_0", "starch_biosynthesis_related_genes")
+
+
+
+
+# Knockout-Line: KO_20 vs. KO_0
+match_relevant_genes(relevant_ko_20_vs_0, starch_biosynthesis_related, "starch_biosynthesis_ko_20_vs_0", "starch_biosynthesis_related_genes")
+
+# Knockout-Line: KO_40 vs. KO_0
+match_relevant_genes(relevant_ko_40_vs_0, starch_biosynthesis_related, "starch_biosynthesis_ko_40_vs_0", "starch_biosynthesis_related_genes")
+
+# Knockout-Line: KO_60 vs. KO_0
+match_relevant_genes(relevant_ko_60_vs_0, starch_biosynthesis_related, "starch_biosynthesis_ko_60_vs_0", "starch_biosynthesis_related_genes")
+
+# Knockout-Line: KO_80 vs. KO_0
+match_relevant_genes(relevant_ko_80_vs_0, starch_biosynthesis_related, "starch_biosynthesis_ko_80_vs_0", "starch_biosynthesis_related_genes")
+```
+
+### Finding Unique GeneID for Significantly Expressed Starch Biosynthesis Related Genes
+Same process as with abiotic stress related and lipid biosynthesis related genes. 
+```{r}
+# 1) list all objects starting with 'starch_biosynthesis'
+all_starch_biosyn_df_names <- ls(pattern = "^starch_biosynthesis")
+
+# 2) exclude the 'starch_biosynthesis_related' data frame (as it includes more than just the significantly expressed genes)
+all_starch_biosyn_df_names <- setdiff(all_starch_biosyn_df_names, "starch_biosynthesis_related") # min_met_transport_genes and min_met_transport_related
+
+# 3) load the matching data frames into a list
+all_starch_biosyn_df_list <- mget(all_starch_biosyn_df_names)
+
+# 4) bind them into one data frame
+all_starch_biosyn_genes_df <- bind_rows(all_starch_biosyn_df_list)
+```
+
+Select only the following columns: 
+
+  - GeneID
+  - gene_name 
+  - gene_pathway 
+  
+Collapse the rows to only contain unique rows.
+```{r}
+# select only specific columns and unique rows and condense to only unique rows 
+all_starch_biosyn_genes_df <- all_starch_biosyn_genes_df |>
+  dplyr::select(GeneID, gene_name, gene_pathway) |>
+  dplyr::distinct()
+```
+
+Merge the data frame with the unique starch biosynthesis related genes to averaged_st35_normalized_counts.
+```{r}
+# merge according to GeneID
+normalized_starch_biosyn_avg_read_counts <- merge(averaged_st35_normalized_counts, all_starch_biosyn_genes_df, by = "GeneID")
+
+# re-order the columns
+normalized_starch_biosyn_avg_read_counts <- normalized_starch_biosyn_avg_read_counts |>
+  dplyr::select(GeneID, gene_name, gene_pathway, everything())
+
+# order the columns alphabetically by the gene_pathway column 
+normalized_starch_biosyn_avg_read_counts <- normalized_starch_biosyn_avg_read_counts |>
+  arrange(gene_pathway)
+```
+
+### Heatmap for Starch Biosynthesis Genes 
+Utilizing the GOI_heatmap() function to produce a heatmap using the genes associated with starch biosynthesis across our samples: 
+```{r}
+starch_biosynthesis_gene_expression_heatmap <- GOI_heatmap(
+  df = normalized_starch_biosyn_avg_read_counts,
+  gene_id_col = "GeneID", 
+  gene_name_col = "gene_name",
+  group_col = "gene_pathway",
+  plot_title = "Starch Biosynthesis Gene Expression Heatmap",
+  file_format = "pdf"
+)
+
+# view heatmap 
+starch_biosynthesis_gene_expression_heatmap
+```
+
+## Metal Transporters
+**4/22/25**
+Note: the data being read in will also contain other such transporters including micro and macro nutrient transporters. However, we are particularly interested in the heavy metal transporters. 
+```{r, results = 'hide'}
+min_met_transport_genes <- read_xls("../data/relevant_genes/mineral_and_metal_transporter_genes.xls")
+```
+
+### Cleaning Data
+Cleaning up the read in data for mineral_and_metal_transporter_genes.xls (fixing column names, removing NA rows, etc.):
+```{r}
+# changing column names to be more appropriate 
+min_met_transport_related <- min_met_transport_genes |>
+  rename(transport_type = `Nutrient and Metal transporter and their genes`,
+         gene_name = ...2,
+         GeneID = ...3,
+         remarks = ...4,
+         references = ...5)
+
+# remove the first 3 rows of data 
+min_met_transport_related <- min_met_transport_related[-c(1:3), ]
+
+# add new column titled mineral_metal
+min_met_transport_related <- min_met_transport_related |>
+  mutate(mineral_metal = transport_type)
+
+# fill in the values with the appropriate transporter type in the transport_type column 
+min_met_transport_related <- min_met_transport_related |>
+  mutate(
+    transport_type = case_when(
+      row_number() >= 2 & row_number() <= 7 ~ 'Macro Nutrient Transporters',
+      row_number() >= 10 & row_number() <= 28 ~ 'Micro Nutrient Transporters',
+      row_number() >= 31 & row_number() <= 45 ~ 'Heavy Metal Transporters',
+      TRUE ~ transport_type # keep the rest 
+    )
+  )
+  
+# remove all rows that only contain NA values 
+min_met_transport_related <- min_met_transport_related |>
+  filter(!if_all(everything(), is.na))
+
+# loop until no more NA values exist in the 'mineral_metal' column
+while(any(is.na(min_met_transport_related$mineral_metal))) {
+  min_met_transport_related <- min_met_transport_related |>
+    mutate(mineral_metal = coalesce(mineral_metal, lag(mineral_metal)))
+}
+
+# replaces instances of the word 'and' in both the gene_name and GeneID columns with a comma (,); remove white spaces around the delimiter 
+min_met_transport_related <- min_met_transport_related |>
+  mutate(
+    gene_name = gsub("\\s+", "", gsub("and", ",", gene_name)),
+    GeneID = gsub("\\s+", "", gsub("and", ",", GeneID))
+  )
+
+# remove leading and trailing white spaces from the GeneID column (had to use str_trim since it wasn't literal white space)
+min_met_transport_related <- min_met_transport_related |>
+  mutate(GeneID = str_trim(GeneID))
+
+# capitalize the GeneID values 
+min_met_transport_related <- min_met_transport_related |>
+  mutate(GeneID = toupper(GeneID))
+
+# delete rows 1, 8, 28, 38
+min_met_transport_related <- min_met_transport_related |>
+  slice(-c(1,8,28,38))
+
+# separate rows by the delimiter (,) found in gene_name and GeneID 
+min_met_transport_related <- min_met_transport_related |>
+  separate_rows(gene_name, GeneID, sep = ",")  # split by the delimiter (,)
+
+# remove leading and trailing white spaces from both gene_name (using str_trim)
+min_met_transport_related <- min_met_transport_related |>
+  mutate(gene_name = str_trim(gene_name))
+
+# re-order the columns 
+min_met_transport_related <- min_met_transport_related |>
+  dplyr::select(GeneID, gene_name, transport_type, mineral_metal, everything())
+```
+
+### Subset Heavy Metal Transporters 
+```{r}
+heavy_met_transport_related <- min_met_transport_related |> 
+  filter(transport_type == 'Heavy Metal Transporters')
+```
+
+### Filtering DESeq2 Results with Mineral and Metal Transporter Related Genes 
+```{r, echo = FALSE, results = 'hide'}
+# Controls: KO_0 vs. WT_0 
+match_relevant_genes(relevant_controls_knockout_line_vs_wild_type, min_met_transport_related, "min_met_transport_controls_ko_vs_wt", "mineral_metal_transporter_related_genes")
+
+
+
+
+# Treatment: KO_20 vs. WT_20
+match_relevant_genes(relevant_treatment_ko_20_vs_wt_20, min_met_transport_related, "min_met_transport_treatment_ko_20_vs_wt_20", "mineral_metal_transporter_related_genes")
+
+# Treatment: KO_40 vs. WT_40
+match_relevant_genes(relevant_treatment_ko_40_vs_wt_40, min_met_transport_related, "min_met_transport_treatment_ko_40_vs_wt_40", "mineral_metal_transporter_related_genes")
+
+# Treatment: KO_60 vs. WT_60
+match_relevant_genes(relevant_treatment_ko_60_vs_wt_60, min_met_transport_related, "min_met_transport_treatment_ko_60_vs_wt_60", "mineral_metal_transporter_related_genes")
+
+# Treatment: KO_80 vs. WT_80
+match_relevant_genes(relevant_treatment_ko_80_vs_wt_80, min_met_transport_related, "min_met_transport_treatment_ko_80_vs_wt_80", "mineral_metal_transporter_related_genes")
+
+
+
+
+# Wild-Type: WT_20 vs. WT_0
+match_relevant_genes(relevant_wt_20_vs_0, min_met_transport_related, "min_met_transport_wt_20_vs_0", "mineral_metal_transporter_related_genes")
+
+# Wild-Type: WT_40 vs. WT_0
+match_relevant_genes(relevant_wt_40_vs_0, min_met_transport_related, "min_met_transport_wt_40_vs_0", "mineral_metal_transporter_related_genes")
+
+# Wild-Type: WT_60 vs. WT_0
+match_relevant_genes(relevant_wt_60_vs_0, min_met_transport_related, "min_met_transport_wt_60_vs_0", "mineral_metal_transporter_related_genes")
+
+# Wild-Type: WT_80 vs. WT_0
+match_relevant_genes(relevant_wt_80_vs_0, min_met_transport_related, "min_met_transport_wt_80_vs_0", "mineral_metal_transporter_related_genes")
+
+
+
+
+# Knockout-Line: KO_20 vs. KO_0
+match_relevant_genes(relevant_ko_20_vs_0, min_met_transport_related, "min_met_transport_ko_20_vs_0", "mineral_metal_transporter_related_genes")
+
+# Knockout-Line: KO_40 vs. KO_0
+match_relevant_genes(relevant_ko_40_vs_0, min_met_transport_related, "min_met_transport_ko_40_vs_0", "mineral_metal_transporter_related_genes")
+
+# Knockout-Line: KO_60 vs. KO_0
+match_relevant_genes(relevant_ko_60_vs_0, min_met_transport_related, "min_met_transport_ko_60_vs_0", "mineral_metal_transporter_related_genes")
+
+# Knockout-Line: KO_80 vs. KO_0
+match_relevant_genes(relevant_ko_80_vs_0, min_met_transport_related, "min_met_transport_ko_80_vs_0", "mineral_metal_transporter_related_genes")
+```
+
+### Finding Unique GeneID for Significantly Expressed Mineral and Metal Transporter Related Genes
+```{r}
+# 1) list all objects starting with 'min_met_transport'
+all_min_met_transport_df_names <- ls(pattern = "^min_met_transport")
+
+# 2) exclude the 'min_met_transport_related' and 'min_met_transport_genes' data frames (as they include more than just the significantly expressed genes)
+all_min_met_transport_df_names <- setdiff(all_min_met_transport_df_names, c("min_met_transport_related","min_met_transport_genes"))
+
+# 3) load the matching data frames into a list
+all_min_met_transport_df_list <- mget(all_min_met_transport_df_names)
+
+# 4) bind them into one data frame
+all_min_met_transport_genes_df <- bind_rows(all_min_met_transport_df_list)
+```
+
+Select only the following columns: 
+
+  - GeneID
+  - gene_name 
+  - transport_type
+  
+Collapse the rows to only contain unique rows.
+```{r}
+# select only specific columns and unique rows and condense to only unique rows 
+all_min_met_transport_genes_df <- all_min_met_transport_genes_df |>
+  dplyr::select(GeneID, gene_name, transport_type) |>
+  dplyr::distinct()
+```
+
+Merge the data frame with the unique mineral and metal transporter related genes to averaged_st35_normalized_counts.
+```{r}
+# merge according to GeneID
+normalized_min_metal_transport_avg_read_counts <- merge(averaged_st35_normalized_counts, all_min_met_transport_genes_df, by = "GeneID")
+
+# re-order the columns
+normalized_min_metal_transport_avg_read_counts <- normalized_min_metal_transport_avg_read_counts |>
+  dplyr::select(GeneID, gene_name, transport_type, everything())
+
+# order the columns alphabetically by the gene_pathway column 
+normalized_min_metal_transport_avg_read_counts <- normalized_min_metal_transport_avg_read_counts |>
+  arrange(transport_type)
+```
+
+### Heatmap for Mineral and Metal Transporter Genes 
+Utilizing the GOI_heatmap() function to produce a heatmap using the genes associated with mineral and metal transporters across our samples: 
+```{r}
+mineral_metal_transport_gene_expression_heatmap <- GOI_heatmap(
+  df = normalized_min_metal_transport_avg_read_counts,
+  gene_id_col = "GeneID", 
+  gene_name_col = "gene_name",
+  group_col = "transport_type",
+  plot_title = "Mineral and Metal Transport Gene Expression Heatmap",
+  file_format = "pdf"
+)
+
+# view heatmap 
+mineral_metal_transport_gene_expression_heatmap
+```
+
+**BE MINDFUL AND ASK DR. LIANG ABOUT DUPLICATES IN GeneID:** 
+  - Should I be concerned about any of this? 
+
+Also, we could maybe improve visualization of the heatmaps by making new columns within the data frames below that sum the total of the sample read counts across the row and then categorize them accordingly (largest sum to smallest sum). We wouldn't categorize them according to the actual categories but arranging them by size/number. Ideally, we can then visualize the gradient moving up from the smallest counts to the most. 
+  - try removing or changing the arrange() function found in both the GOI_heatmap() function and when preparing the data before using the function! 
+```{r}
+all_abiotic_stress_genes_df |> group_by(GeneID) |> filter(n() > 1)
+
+all_lipid_biosyn_genes_df |> group_by(GeneID) |> filter(n() > 1)
+
+all_starch_biosyn_genes_df |> group_by(GeneID) |> filter(n() > 1)
+
+all_min_met_transport_genes_df |> group_by(GeneID) |> filter(n() > 1)
 ```
